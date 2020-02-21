@@ -1063,6 +1063,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7c4f19224c9d8425b9f8bcc6638792d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  weaponRange: 2
+  timeBetweenAttacks: 1
+--- !u!114 &1785311010692771208
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1785311010692771206}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b39ed7419be94d189ba67d3265f6bcb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!4 &1785311010692771213 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1785311010290312027, guid: dbca6cbd02e5f46ad80c839ea45461c2,
@@ -1156,3 +1170,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0e6bea3087e1343a1b386dd7c27f4fb0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &4714965186987005110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4714965186987005108}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7cb1f41be3fd447299363926a9c5bb76, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  health: 20

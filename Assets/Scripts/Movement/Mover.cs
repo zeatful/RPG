@@ -3,25 +3,25 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using RPG.Combat;
+using RPG.Core;
 
 namespace RPG.Movement
 {
-    public class Mover : MonoBehaviour
+    public class Mover : MonoBehaviour, IAction
     {
         // player target to navigate towards
         [SerializeField] Transform target;
-
         NavMeshAgent navMeshAgent;
-
         Animator animator;
-
         Fighter fighter;
+        ActionScheduler actionScheduler;
 
         private void Start()
         {
             animator = GetComponent<Animator>();
             navMeshAgent = GetComponent<NavMeshAgent>();
             fighter = GetComponent<Fighter>();
+            actionScheduler = GetComponent<ActionScheduler>();
         }
 
         // Update is called once per frame
@@ -32,8 +32,7 @@ namespace RPG.Movement
 
         public void StartMoveAction(Vector3 destination)
         {
-            // cancel combat
-            fighter.Cancel();
+            actionScheduler.StartAction(this);
             MoveTo(destination);
         }
 
@@ -43,7 +42,7 @@ namespace RPG.Movement
             navMeshAgent.isStopped = false;
         }
 
-        public void Stop()
+        public void Cancel()
         {
             navMeshAgent.isStopped = true;
         }
