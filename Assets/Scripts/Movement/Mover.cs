@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.AI;
 using RPG.Combat;
 using RPG.Core;
@@ -15,6 +13,7 @@ namespace RPG.Movement
         Animator animator;
         Fighter fighter;
         ActionScheduler actionScheduler;
+        Health health;
 
         private void Start()
         {
@@ -22,11 +21,13 @@ namespace RPG.Movement
             navMeshAgent = GetComponent<NavMeshAgent>();
             fighter = GetComponent<Fighter>();
             actionScheduler = GetComponent<ActionScheduler>();
+            health = GetComponent<Health>();
         }
 
         // Update is called once per frame
         void Update()
         {
+            navMeshAgent.enabled = !health.IsDead();
             UpdateAnimator();
         }
 

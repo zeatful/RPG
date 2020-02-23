@@ -1,4 +1,4 @@
-namespace RPG.Combat
+namespace RPG.Core
 {
     using UnityEngine;
 
@@ -6,6 +6,14 @@ namespace RPG.Combat
     {
         [SerializeField] float healthPoints = 100f;
         bool isDead = false;
+        ActionScheduler actionScheduler;
+        Animator animator;
+
+        private void Start()
+        {
+            actionScheduler = GetComponent<ActionScheduler>();
+            animator = GetComponent<Animator>();
+        }
 
         public bool IsDead()
         {
@@ -25,7 +33,8 @@ namespace RPG.Combat
         {
             if (isDead) return;
             isDead = true;
-            GetComponent<Animator>().SetTrigger("die");
+            animator.SetTrigger("die");
+            actionScheduler.CancelCurrentAction();
         }
     }
 }
