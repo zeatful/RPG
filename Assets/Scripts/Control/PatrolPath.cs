@@ -33,5 +33,26 @@ namespace RPG.Control
             // ensure modular cycle of waypoints of patrol path
             return (i + 1 < transform.childCount) ? i + 1 : 0;
         }
+
+        // used to initiate the guard to the nearest placed waypoint of the patrol path
+        public int GetClosestWayPointIndex(Vector3 location)
+        {
+            // track the closest index and distance
+            int closestWayPointIndex = 0;
+            float closetDistance = Mathf.Infinity;
+
+            // iterate through all waypoints and get their distance, storing the lowest distance and index
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                float distance = Vector3.Distance(location, transform.GetChild(i).position);
+                if (distance < closetDistance)
+                {
+                    closetDistance = distance;
+                    closestWayPointIndex = i;
+                }
+            }
+
+            return closestWayPointIndex;
+        }
     }
 }
