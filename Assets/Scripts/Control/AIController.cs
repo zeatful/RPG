@@ -1,5 +1,6 @@
 namespace RPG.Control
 {
+    using System;
     using RPG.Combat;
     using RPG.Core;
     using RPG.Movement;
@@ -9,6 +10,9 @@ namespace RPG.Control
     {
         [SerializeField] float chaseDistance = 5f;
         [SerializeField] float suspicionTime = 5f;
+        [SerializeField] PatrolPath patrolPath;
+        [SerializeField] float waypointTolerance = 1f;
+
         GameObject player;
         Fighter fighter;
         Health health;
@@ -17,6 +21,7 @@ namespace RPG.Control
 
         Vector3 guardLocation;
         float timeSinceLastSawPlayer = Mathf.Infinity;
+        int currentWaypointIndex = 0;
 
         private void Start()
         {
@@ -43,15 +48,47 @@ namespace RPG.Control
             }
             else
             {
-                GuardBehavior();
+                PatrolBehavior();
             }
 
             timeSinceLastSawPlayer += Time.deltaTime;
         }
 
-        private void GuardBehavior()
+        private void PatrolBehavior()
         {
-            mover.StartMoveAction(guardLocation);
+            Vector3 nextPosition = guardLocation;
+
+            if (patrolPath != null)
+            {
+                if (AtWayPoint())
+                {
+                    CycleWaypoint();
+                }
+                nextPosition = GetCurrentWayPoint();
+            }
+
+            mover.StartMoveAction(nextPosition);
+        }
+
+        private void CycleWaypoint()
+        {
+            currentWaypointIndex = patrolPath.GetNexWayPointIndex(currentWaypointIndex);
+        }
+
+        private bool AtWayPoint()
+        {
+            float distanceToWaypoint = Vector3.Distance(transform.position, GetCurrentWayPoint());
+            return (distanceToWaypoint < waypointTolerance);
+        }
+
+        private Vector3 GetNextWayPoint()
+        {
+            return patrolPath.GetNextWayPoint(currentWaypointIndex);
+        }
+
+        private Vector3 GetCurrentWayPoint()
+        {
+            return patrolPath.GetWaypoint(currentWaypointIndex);
         }
 
         private void SuspicionBehavior()

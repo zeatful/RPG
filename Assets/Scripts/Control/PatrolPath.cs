@@ -6,8 +6,10 @@ namespace RPG.Control
     {
         const float wayPointGizmoRadius = 0.3f;
 
+        // called by unity
         private void OnDrawGizmos()
         {
+            // iterate through each waypoint and add a sphere and draw lines between each to complete a path
             for (int i = 0; i < transform.childCount; i++)
             {
                 Gizmos.DrawSphere(GetWaypoint(i), wayPointGizmoRadius);
@@ -15,14 +17,21 @@ namespace RPG.Control
             }
         }
 
-        private Vector3 GetWaypoint(int i)
+        public Vector3 GetWaypoint(int i)
         {
             return transform.GetChild(i).position;
         }
 
-        private Vector3 GetNextWayPoint(int i)
+        public Vector3 GetNextWayPoint(int i)
         {
-            return GetWaypoint(i + 1 < transform.childCount ? i + 1 : 0);
+            // ensure we grab proper next way point
+            return GetWaypoint(GetNexWayPointIndex(i));
+        }
+
+        public int GetNexWayPointIndex(int i)
+        {
+            // ensure modular cycle of waypoints of patrol path
+            return (i + 1 < transform.childCount) ? i + 1 : 0;
         }
     }
 }
