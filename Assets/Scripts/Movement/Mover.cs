@@ -9,6 +9,8 @@ namespace RPG.Movement
     {
         // player target to navigate towards
         [SerializeField] Transform target;
+        [SerializeField] float maxSpeed = 6f;
+
         NavMeshAgent navMeshAgent;
         Animator animator;
         Fighter fighter;
@@ -31,15 +33,17 @@ namespace RPG.Movement
             UpdateAnimator();
         }
 
-        public void StartMoveAction(Vector3 destination)
+        public void StartMoveAction(Vector3 destination, float speedFaction)
         {
             actionScheduler.StartAction(this);
-            MoveTo(destination);
+            MoveTo(destination, speedFaction);
         }
 
-        public void MoveTo(Vector3 destination)
+        public void MoveTo(Vector3 destination, float speedFaction)
         {
             navMeshAgent.destination = destination;
+            // ensure the number is between 0 and 1 only
+            navMeshAgent.speed = maxSpeed * Mathf.Clamp01(speedFaction);
             navMeshAgent.isStopped = false;
         }
 
