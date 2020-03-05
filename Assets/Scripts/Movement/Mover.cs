@@ -1,11 +1,12 @@
 ﻿using UnityEngine;
 using UnityEngine.AI;
+using RPG.Saving;
 using RPG.Combat;
 using RPG.Core;
 
 namespace RPG.Movement
 {
-    public class Mover : MonoBehaviour, IAction
+    public class Mover : MonoBehaviour, IAction, ISaveable
     {
         // player target to navigate towards
         [SerializeField] Transform target;
@@ -59,6 +60,19 @@ namespace RPG.Movement
             Vector3 localVelocity = transform.InverseTransformDirection(velocity);
             float speed = localVelocity.z;
             animator.SetFloat("ForwardSpeed", speed);
+        }
+
+        public object CaptureState()
+        {
+            return new SerializableVector3(transform.position);
+        }
+
+        public void RestoreState(object state)
+        {
+            // temporarily disable to prevent conflicts
+            navMeshAgent.enabled = false;
+            transform.position = ((SerializableVector3)state).ToVector();
+            navMeshAgent.enabled = true;
         }
     }
 }
