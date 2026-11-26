@@ -3,6 +3,8 @@ using RPG.Movement;
 using RPG.Combat;
 using System;
 using RPG.Core;
+using RPG.Gathering;
+using RPG.Items;
 
 namespace RPG.Control
 {
@@ -12,6 +14,8 @@ namespace RPG.Control
         Mover mover;
         CombatTarget combatTarget;
         Health health;
+        Gatherer gatherer;
+        PickupCollector collector;
 
         private void Start()
         {
@@ -23,7 +27,9 @@ namespace RPG.Control
         private void Update()
         {
             if (health.IsDead()) return;
+            if (UiState.PointerOverUi) return;
             if (InteractWithCombat()) return;
+            if (InteractWithWorld()) return;
             if (InteractWithMovement()) return;
         }
 
@@ -42,6 +48,33 @@ namespace RPG.Control
                     fighter.Attack(target.gameObject);
                 }
                 return true;
+            }
+            return false;
+        }
+
+        // Loot pickups and resource nodes (trees, rocks).
+        private bool InteractWithWorld()
+        {
+            if (gatherer == null) gatherer = GetComponent<Gatherer>();
+            if (collector == null) collector = GetComponent<PickupCollector>();
+
+            RaycastHit[] hits = Physics.RaycastAll(GetMouseRay());
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (RaycastHit hit in hits)
+            {
+                Pickup pickup = hit.transform.GetComponent<Pickup>();
+                if (pickup != null && collector != null)
+                {
+                    if (Input.GetMouseButtonDown(0)) collector.Collect(pickup);
+                    return true;
+                }
+
+                ResourceNode node = hit.transform.GetComponentInParent<ResourceNode>();
+                if (node != null && gatherer != null)
+                {
+                    if (Input.GetMouseButtonDown(0)) gatherer.Gather(node);
+                    return true;
+                }
             }
             return false;
         }

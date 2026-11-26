@@ -45,6 +45,17 @@ namespace RPG.Control
             }
         }
 
+        // Used when spawning enemies at runtime (e.g. the boss). Call before Start; null = guard the spawn point.
+        public void SetPatrolPath(PatrolPath path)
+        {
+            patrolPath = path;
+        }
+
+        public void SetChaseDistance(float distance)
+        {
+            chaseDistance = distance;
+        }
+
         private void Update()
         {
             if (health.IsDead()) return;
