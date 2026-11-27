@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f44a4d7b0ec72f4b9d7e6d59806254d, type: 3}
+  m_Name: RpgArt
+  m_EditorClassIdentifier: Assembly-CSharp::RPG.Core.RpgArt
+  FirTreeA: {fileID: 1069289201138886, guid: 6b444276162548b4e9107350b71e775a, type: 3}
+  FirTreeB: {fileID: 1593950697155818, guid: d2cd02263a1e8084abf81f1324b929be, type: 3}
+  RoundTree: {fileID: 190414, guid: 653c97bd88b4b084d87714542c43ee5a, type: 3}
+  TallTree: {fileID: 135026, guid: d556d30cab334dd449000218c87322ef, type: 3}
+  RockA: {fileID: 1927372005322154, guid: 39de80c7e7a1a2942820576875608e5d, type: 3}
+  RockB: {fileID: 1828138642645558, guid: b0622c7c0ff092b46a37f31c718c5eba, type: 3}
+  RockC: {fileID: 178776, guid: 27b2a5e9e01330645a7ab5be223502ae, type: 3}
+  Wolf: {fileID: 919132149155446097, guid: 8f2ae6beb828b4e65994718ac134da3e, type: 3}
+  Slime: {fileID: 919132149155446097, guid: 055f0b133858c81eb840eb63566c2cd5, type: 3}

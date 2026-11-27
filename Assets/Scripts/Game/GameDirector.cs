@@ -61,6 +61,7 @@ namespace RPG.Game
             GameLog.Add("I = inventory and crafting, K = skills, S / L = save / load.");
 
             if (SmokeTest.Requested) gameObject.AddComponent<SmokeTest>();
+            if (Showcase.RequestedDir != null) gameObject.AddComponent<Showcase>();
         }
 
         static T Ensure<T>(GameObject go) where T : Component
@@ -139,6 +140,7 @@ namespace RPG.Game
                 if (!NavMesh.SamplePosition(candidate, out hit, 2f, NavMesh.AllAreas)) continue;
                 if (TooClose(hit.position, placed, info.Kind == NodeKind.Tree ? 3.5f : 2.5f)) continue;
                 if (lair.HasValue && RpgUtil.FlatDistance(hit.position, lair.Value) < NodeBossClearance) continue;
+                if (!Reachable(center, hit.position)) continue;
 
                 ResourceNode.Create(info, hit.position, (float)random.NextDouble() * 360f);
                 placed.Add(hit.position);
@@ -198,6 +200,16 @@ namespace RPG.Game
             profile.Configure(info);
             template.AddComponent<BossController>();
             return lair;
+        }
+
+        // Only place nodes the player can actually walk up to (not across the river or in a pit).
+        static bool Reachable(Vector3 from, Vector3 to)
+        {
+            NavMeshHit start;
+            if (!NavMesh.SamplePosition(from, out start, 2f, NavMesh.AllAreas)) return true;
+            NavMeshPath path = new NavMeshPath();
+            if (!NavMesh.CalculatePath(start.position, to, NavMesh.AllAreas, path)) return false;
+            return path.status == NavMeshPathStatus.PathComplete;
         }
 
         static bool TooClose(Vector3 position, List<Vector3> placed, float minDistance)

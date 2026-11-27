@@ -25,6 +25,7 @@ namespace RPG.EditorTools
 
         static bool Build()
         {
+            RpgArtSetup.Run();
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(Scene, true) };
             Directory.CreateDirectory(Path.GetDirectoryName(Output));
             BuildPlayerOptions options = new BuildPlayerOptions

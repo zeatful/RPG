@@ -19,6 +19,9 @@ namespace RPG.Control
         public EnemyInfo Info { get; private set; }
         public Health Health { get; private set; }
 
+        /// <summary>How far above the feet the name and health bar float.</summary>
+        public float NameplateHeight { get; private set; }
+
         Vector3 spawnPoint;
         Quaternion spawnRotation;
         float deadTimer;
@@ -52,7 +55,17 @@ namespace RPG.Control
             gameObject.name = info.Name;
             if (info.Scale != 1f) transform.localScale = transform.localScale * info.Scale;
             Health.SetMaxHealth(info.MaxHp, true);
-            RpgUtil.Tint(gameObject, RpgUtil.FromHex(info.TintHex, Color.white), 0.5f);
+
+            bool tint;
+            if (CreatureVisual.Apply(gameObject, info, out tint))
+            {
+                NameplateHeight = GetComponent<CreatureVisual>().Height + 0.45f;
+            }
+            else
+            {
+                NameplateHeight = 2.3f * info.Scale;
+            }
+            if (tint) RpgUtil.Tint(gameObject, RpgUtil.FromHex(info.TintHex, Color.white), 0.5f);
             Health.onDeath -= OnDeath;
             Health.onDeath += OnDeath;
         }

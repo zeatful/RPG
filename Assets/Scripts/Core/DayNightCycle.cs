@@ -52,6 +52,9 @@ namespace RPG.Core
                 baseYaw = sun.transform.eulerAngles.y;
             }
             baseAmbient = RenderSettings.ambientIntensity;
+            // Gradient ambient light we control directly. The upgraded scene has no baked ambient data,
+            // which left everything outside direct sunlight pitch black.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
         }
 
         private void OnDestroy()
@@ -77,6 +80,9 @@ namespace RPG.Core
             float daylight = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.15f, 0.35f, height));
 
             RenderSettings.ambientIntensity = Mathf.Lerp(baseAmbient * 0.35f, baseAmbient, daylight);
+            RenderSettings.ambientSkyColor = Color.Lerp(new Color(0.10f, 0.12f, 0.22f), new Color(0.60f, 0.66f, 0.76f), daylight);
+            RenderSettings.ambientEquatorColor = Color.Lerp(new Color(0.08f, 0.09f, 0.15f), new Color(0.50f, 0.50f, 0.45f), daylight);
+            RenderSettings.ambientGroundColor = Color.Lerp(new Color(0.05f, 0.05f, 0.08f), new Color(0.32f, 0.29f, 0.24f), daylight);
             if (sun == null) return;
 
             float pitch = Mathf.Lerp(-10f, 70f, Mathf.Clamp01((height + 0.2f) / 1.2f));

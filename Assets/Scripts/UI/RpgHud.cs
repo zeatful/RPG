@@ -242,7 +242,7 @@ namespace RPG.UI
                 if (Vector3.Distance(enemy.transform.position, player.transform.position) > NameplateRange) continue;
 
                 Vector2 pos;
-                if (!WorldToGui(enemy.transform.position + Vector3.up * 2.3f, out pos)) continue;
+                if (!WorldToGui(enemy.transform.position + Vector3.up * Mathf.Max(1.1f, enemy.NameplateHeight), out pos)) continue;
 
                 // colour by level difference, like classic MMOs
                 int diff = enemy.Info.Level - playerLevel;
@@ -419,7 +419,9 @@ namespace RPG.UI
         {
             ItemInfo info = GameContent.Item(itemId);
             GUI.Label(new Rect(x, y, 60, 20), slotName + ":", bold);
-            GUI.Label(new Rect(x + 60, y, 120, 20), info != null ? info.Name : "-", label);
+            Texture2D icon = info != null ? ItemIcons.Get(itemId) : null;
+            if (icon != null) GUI.DrawTexture(new Rect(x + 58, y, 20, 20), icon, ScaleMode.ScaleToFit);
+            GUI.Label(new Rect(x + 80, y, 100, 20), info != null ? info.Name : "-", label);
             if (info != null && GUI.Button(new Rect(x + 180, y, 36, 18), "Off")) inventory.Unequip(slot);
             return y + 22;
         }
@@ -439,10 +441,10 @@ namespace RPG.UI
                 ItemInfo info = GameContent.Item(stack.ItemId);
                 if (info == null) continue;
 
-                Box(new Rect(cell.x + 6, cell.y + 6, cell.width - 12, cell.height - 22), RpgUtil.FromHex(info.ColorHex, Color.gray));
+                Texture2D icon = ItemIcons.Get(stack.ItemId);
+                if (icon != null) GUI.DrawTexture(new Rect(cell.x + 3, cell.y + 3, cell.width - 6, cell.height - 6), icon, ScaleMode.ScaleToFit);
                 if (info.Rare) Box(new Rect(cell.x, cell.y, cell.width, 2), GameLog.Rare);
-                GUI.Label(new Rect(cell.x, cell.yMax - 17, cell.width, 16), Abbreviate(info.Name), small);
-                if (stack.Quantity > 1) Shadow(new Rect(cell.x + 2, cell.y, cell.width, 16), stack.Quantity.ToString(), small, Color.yellow);
+                if (stack.Quantity > 1) Shadow(new Rect(cell.x + 2, cell.y, cell.width, 16), QuantityText(stack.Quantity), small, Color.yellow);
 
                 if (cell.Contains(e.mousePosition))
                 {
@@ -490,6 +492,13 @@ namespace RPG.UI
                 text += "\nRight-click: drop";
             }
             return text;
+        }
+
+        static string QuantityText(int quantity)
+        {
+            if (quantity >= 10000000) return (quantity / 1000000) + "M";
+            if (quantity >= 100000) return (quantity / 1000) + "K";
+            return quantity.ToString();
         }
 
         static string Abbreviate(string name)

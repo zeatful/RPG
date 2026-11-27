@@ -55,6 +55,71 @@ namespace RPG.Core
             material.SetColor("_EmissionColor", glow);
         }
 
+        /// <summary>
+        /// Instantiate a model and fit it into a box of the given size (feet at y = 0, centred). Pass 0 for
+        /// x/z to scale those axes with the height. Returns a root whose child carries the scale.
+        /// </summary>
+        public static GameObject FitModel(GameObject prefab, Vector3 size)
+        {
+            GameObject root = new GameObject(prefab.name + " (fitted)");
+            GameObject holder = new GameObject("Scale");
+            holder.transform.SetParent(root.transform, false);
+            GameObject model = Object.Instantiate(prefab, holder.transform, false);
+            model.name = prefab.name;
+            foreach (Collider collider in model.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
+
+            // Measure the model as it will look while animating: sample its idle (or first) clip first,
+            // because exported armatures often carry their real scale/offset in the animation.
+            Animation animation = model.GetComponentInChildren<Animation>();
+            if (animation != null)
+            {
+                string clip = null;
+                foreach (AnimationState state in animation)
+                {
+                    if (clip == null || state.name.ToLower().Contains("idle")) clip = state.name;
+                }
+                if (clip != null)
+                {
+                    animation.Play(clip);
+                    animation.Sample();
+                }
+            }
+            foreach (SkinnedMeshRenderer skinned in model.GetComponentsInChildren<SkinnedMeshRenderer>()) skinned.updateWhenOffscreen = true;
+
+            Bounds bounds = new Bounds();
+            bool first = true;
+            foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>())
+            {
+                if (first) { bounds = renderer.bounds; first = false; }
+                else bounds.Encapsulate(renderer.bounds);
+            }
+            if (first || bounds.size.y <= 0.0001f) return root;
+
+            model.transform.localPosition -= new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
+            float uniform = size.y / bounds.size.y;
+            holder.transform.localScale = new Vector3(
+                size.x > 0 ? size.x / Mathf.Max(0.0001f, bounds.size.x) : uniform,
+                uniform,
+                size.z > 0 ? size.z / Mathf.Max(0.0001f, bounds.size.z) : uniform);
+            return root;
+        }
+
+        /// <summary>Recolour (instanced) materials on a model whose name contains the given text; null matches all.</summary>
+        public static void Recolor(GameObject root, string materialNameContains, Color color)
+        {
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>())
+            {
+                Material[] materials = renderer.materials;
+                foreach (Material material in materials)
+                {
+                    if (materialNameContains != null && !material.name.Contains(materialNameContains)) continue;
+                    if (material.HasProperty("_Color")) material.color = color;
+                    if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.1f);
+                }
+                renderer.materials = materials;
+            }
+        }
+
         /// <summary>Create a primitive child with no collider.</summary>
         public static GameObject Part(PrimitiveType type, Transform parent, Vector3 localPos, Vector3 scale, Color color)
         {

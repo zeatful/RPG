@@ -261,9 +261,16 @@ namespace RPG.Game
         IEnumerator TestGathering()
         {
             ResourceNode tree = null;
+            float best = float.MaxValue;
             foreach (ResourceNode node in FindObjectsByType<ResourceNode>(FindObjectsSortMode.None))
             {
-                if (node.Info.Id == "pine" && !node.IsDepleted) tree = node;
+                if (node.Info.Id != "pine" || node.IsDepleted) continue;
+                float distance = Vector3.Distance(player.transform.position, node.transform.position);
+                if (distance < best)
+                {
+                    best = distance;
+                    tree = node;
+                }
             }
             Check(tree != null, "no pine tree to chop");
             if (tree == null) yield break;
@@ -320,9 +327,12 @@ namespace RPG.Game
             playerHealth.SetMaxHealth(100000, true);
             SkillSet skills = player.GetComponent<SkillSet>();
             int hits = 0;
+            int enemySwings = 0;
+            GameObject enemyObject = target.gameObject;
             Action<GameObject, GameObject, int> counter = (attacker, defender, damage) =>
             {
                 if (attacker == player) hits++;
+                if (attacker == enemyObject) enemySwings++;
             };
             Fighter.onAttackResolved += counter;
 
@@ -338,6 +348,8 @@ namespace RPG.Game
             Fighter.onAttackResolved -= counter;
 
             Check(hits > 0, "player attacks never resolved (animation Hit events not firing?)");
+            Check(enemySwings > 0, target.Info.Name + " never attacked back (hidden puppet animator not firing Hit events?)");
+            Log(target.Info.Name + " swung " + enemySwings + " times, player " + hits);
             Check(target.Health.IsDead(), target.Info.Name + " did not die within the time limit (" + hits + " swings)");
             Check(skills.GetXp(Skill.Attack) > 0 && skills.GetXp(Skill.Strength) > 0, "no attack/strength xp from combat");
             if (!target.Health.IsDead()) yield break;

@@ -35,12 +35,28 @@ namespace RPG.Items
             NavMeshHit hit;
             if (NavMesh.SamplePosition(position, out hit, 3f, NavMesh.AllAreas)) position = hit.position;
 
-            GameObject go = GameObject.CreatePrimitive(special ? PrimitiveType.Sphere : PrimitiveType.Cube);
-            go.name = "Loot: " + (info != null ? info.Name : stack.ItemId);
-            go.transform.position = position + Vector3.up * 0.3f;
-            go.transform.localScale = Vector3.one * (special ? 0.45f : 0.35f);
-            RpgUtil.SetColor(go, color);
-            if (special) RpgUtil.SetGlow(go, color * 0.8f);
+            // the item's icon as a floating billboard; rare drops sit on a glowing orb
+            GameObject go = new GameObject("Loot: " + (info != null ? info.Name : stack.ItemId));
+            go.transform.position = position + Vector3.up * 0.45f;
+            SphereCollider collider = go.AddComponent<SphereCollider>();
+            collider.radius = 0.35f;
+
+            GameObject spriteObject = new GameObject("Icon");
+            spriteObject.transform.SetParent(go.transform, false);
+            SpriteRenderer sprite = spriteObject.AddComponent<SpriteRenderer>();
+            sprite.sprite = RPG.UI.ItemIcons.GetSprite(stack.ItemId, 0.6f);
+            if (sprite.sprite == null)
+            {
+                Destroy(spriteObject);
+                RpgUtil.Part(PrimitiveType.Cube, go.transform, Vector3.zero, Vector3.one * 0.35f, color);
+            }
+
+            if (special)
+            {
+                GameObject orb = RpgUtil.Part(PrimitiveType.Sphere, go.transform, new Vector3(0, -0.3f, 0), Vector3.one * 0.22f, GameLog.Rare);
+                RpgUtil.SetGlow(orb, GameLog.Rare * 0.9f);
+                spriteObject.transform.localScale = Vector3.one * 1.25f;
+            }
 
             Pickup pickup = go.AddComponent<Pickup>();
             pickup.Stack = stack;
@@ -59,7 +75,9 @@ namespace RPG.Items
                 return;
             }
             transform.position = basePosition + Vector3.up * (Mathf.Sin(Time.time * 2f + phase) * 0.06f);
-            transform.Rotate(0, 60f * Time.deltaTime, 0, Space.World);
+            // face the camera like a billboard
+            Camera camera = Camera.main;
+            if (camera != null) transform.rotation = Quaternion.LookRotation(transform.position - camera.transform.position, Vector3.up);
         }
     }
 }

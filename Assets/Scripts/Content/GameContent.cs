@@ -278,12 +278,12 @@ namespace RPG.Content
         static Dictionary<string, NodeInfo> BuildNodes()
         {
             Dictionary<string, NodeInfo> nodes = new Dictionary<string, NodeInfo>();
-            nodes["pine"] = new NodeInfo { Id = "pine", Name = "Pine tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 1, Xp = 25, ItemId = "logs_pine", RespawnSeconds = 10f, DepleteChance = 1.0, ColorHex = "#2F6B3A", AccentHex = "#6B4A2B" };
-            nodes["oak"] = new NodeInfo { Id = "oak", Name = "Oak tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 15, Xp = 38, ItemId = "logs_oak", RespawnSeconds = 15f, DepleteChance = 0.2, ColorHex = "#4E8A2E", AccentHex = "#5A3D22" };
-            nodes["willow"] = new NodeInfo { Id = "willow", Name = "Willow tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 30, Xp = 68, ItemId = "logs_willow", RespawnSeconds = 15f, DepleteChance = 0.15, ColorHex = "#8FB35A", AccentHex = "#6B5A3A" };
-            nodes["copper"] = new NodeInfo { Id = "copper", Name = "Copper rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 1, Xp = 18, ItemId = "ore_copper", RespawnSeconds = 5f, DepleteChance = 1.0, ColorHex = "#6B6B6B", AccentHex = "#C8733A", BonusItemId = "spark_stone", BonusChance = 0.15 };
-            nodes["tin"] = new NodeInfo { Id = "tin", Name = "Tin rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 1, Xp = 18, ItemId = "ore_tin", RespawnSeconds = 5f, DepleteChance = 1.0, ColorHex = "#6B6B6B", AccentHex = "#D5DADF", BonusItemId = "spark_stone", BonusChance = 0.15 };
-            nodes["iron"] = new NodeInfo { Id = "iron", Name = "Iron rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 15, Xp = 35, ItemId = "ore_iron", RespawnSeconds = 8f, DepleteChance = 1.0, ColorHex = "#6B6B6B", AccentHex = "#6E4A3A" };
+            nodes["pine"] = new NodeInfo { Id = "pine", Name = "Pine tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 1, Xp = 25, ItemId = "logs_pine", RespawnSeconds = 10f, DepleteChance = 1.0, ColorHex = "#2C5E4A", AccentHex = "#6B4A2B" };
+            nodes["oak"] = new NodeInfo { Id = "oak", Name = "Oak tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 15, Xp = 38, ItemId = "logs_oak", RespawnSeconds = 15f, DepleteChance = 0.2, ColorHex = "#C9782C", AccentHex = "#5A3D22" };
+            nodes["willow"] = new NodeInfo { Id = "willow", Name = "Willow tree", Kind = NodeKind.Tree, Skill = Skill.Woodcutting, Level = 30, Xp = 68, ItemId = "logs_willow", RespawnSeconds = 15f, DepleteChance = 0.15, ColorHex = "#A8C85A", AccentHex = "#6B5A3A" };
+            nodes["copper"] = new NodeInfo { Id = "copper", Name = "Copper rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 1, Xp = 18, ItemId = "ore_copper", RespawnSeconds = 5f, DepleteChance = 1.0, ColorHex = "#7A6A5E", AccentHex = "#E07A3A", BonusItemId = "spark_stone", BonusChance = 0.15 };
+            nodes["tin"] = new NodeInfo { Id = "tin", Name = "Tin rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 1, Xp = 18, ItemId = "ore_tin", RespawnSeconds = 5f, DepleteChance = 1.0, ColorHex = "#8A9096", AccentHex = "#E8F0F8", BonusItemId = "spark_stone", BonusChance = 0.15 };
+            nodes["iron"] = new NodeInfo { Id = "iron", Name = "Iron rock", Kind = NodeKind.Rock, Skill = Skill.Mining, Level = 15, Xp = 35, ItemId = "ore_iron", RespawnSeconds = 8f, DepleteChance = 1.0, ColorHex = "#55504C", AccentHex = "#B5553A" };
             return nodes;
         }
 
