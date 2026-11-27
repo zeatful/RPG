@@ -38,7 +38,7 @@ namespace RPG.Game
 
         static void EnsureDirector()
         {
-            if (FindObjectOfType<GameDirector>() != null) return;
+            if (FindFirstObjectByType<GameDirector>() != null) return;
             if (GameObject.FindWithTag("Player") == null) return;
             new GameObject("RPG Systems").AddComponent<GameDirector>();
         }
@@ -86,7 +86,7 @@ namespace RPG.Game
 
         void SetupEnemies()
         {
-            List<AIController> enemies = new List<AIController>(FindObjectsOfType<AIController>());
+            List<AIController> enemies = new List<AIController>(FindObjectsByType<AIController>(FindObjectsSortMode.None));
             // stable order so the same enemy gets the same profile every run
             enemies.Sort((a, b) =>
             {
@@ -143,7 +143,7 @@ namespace RPG.Game
         // Clone an enemy from the scene before profiles/tints are applied, to use as the boss body.
         GameObject FindBossTemplate()
         {
-            AIController[] enemies = FindObjectsOfType<AIController>();
+            AIController[] enemies = FindObjectsByType<AIController>(FindObjectsSortMode.None);
             if (enemies.Length == 0) return null;
             GameObject template = Instantiate(enemies[0].gameObject);
             template.SetActive(false);

@@ -37,7 +37,7 @@ namespace RPG.Core
         private void Awake()
         {
             Instance = this;
-            foreach (Light light in FindObjectsOfType<Light>())
+            foreach (Light light in FindObjectsByType<Light>(FindObjectsSortMode.None))
             {
                 if (light.type == LightType.Directional)
                 {
