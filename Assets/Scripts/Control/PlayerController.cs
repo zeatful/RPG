@@ -69,6 +69,17 @@ namespace RPG.Control
                     return true;
                 }
 
+                RPG.World.Station station = hit.transform.GetComponentInParent<RPG.World.Station>();
+                if (station != null)
+                {
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        RPG.World.StationUser user = GetComponent<RPG.World.StationUser>();
+                        if (user != null) user.Use(station);
+                    }
+                    return true;
+                }
+
                 ResourceNode node = hit.transform.GetComponentInParent<ResourceNode>();
                 if (node != null && gatherer != null)
                 {

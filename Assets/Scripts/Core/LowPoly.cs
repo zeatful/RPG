@@ -37,6 +37,7 @@ namespace RPG.Core
             if (materials.TryGetValue(key, out material) && material != null) return material;
             material = new Material(BaseMaterial);
             material.color = color;
+            material.enableInstancing = true;
             if (glow > 0f && material.HasProperty("_EmissionColor"))
             {
                 material.EnableKeyword("_EMISSION");
@@ -107,6 +108,28 @@ namespace RPG.Core
                 Vector3 b = Ring(i + 1, sides, 0.5f, 0f);
                 Vector3 c = Ring(i, sides, 0.5f * taper, 1f);
                 Vector3 d = Ring(i + 1, sides, 0.5f * taper, 1f);
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+                tris.Add(Vector3.zero); tris.Add(a); tris.Add(b);
+                tris.Add(top); tris.Add(d); tris.Add(c);
+            }
+            return Store(key, tris);
+        }
+
+        /// <summary>Axis-aligned box: x and z from -0.5 to 0.5, y from 0 to 1.</summary>
+        public static Mesh Block()
+        {
+            const string key = "block";
+            Mesh mesh;
+            if (meshes.TryGetValue(key, out mesh)) return mesh;
+            List<Vector3> tris = new List<Vector3>();
+            Vector3[] ring = { new Vector3(0.5f, 0, 0.5f), new Vector3(-0.5f, 0, 0.5f), new Vector3(-0.5f, 0, -0.5f), new Vector3(0.5f, 0, -0.5f) };
+            Vector3 up = Vector3.up;
+            Vector3 top = new Vector3(0, 1, 0);
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 a = ring[i], b = ring[(i + 1) % 4];
+                Vector3 c = a + up, d = b + up;
                 tris.Add(a); tris.Add(c); tris.Add(b);
                 tris.Add(b); tris.Add(c); tris.Add(d);
                 tris.Add(Vector3.zero); tris.Add(a); tris.Add(b);

@@ -177,7 +177,27 @@ namespace RPG.Control
         void OnDeath(GameObject killer)
         {
             deadTimer = 0;
-            GameLog.Add("You have fallen. You'll wake up where you started.", GameLog.Warning);
+            GameLog.Add("You have fallen. You'll wake up at the spawn point in Brookhollow.", GameLog.Warning);
+            DropItemsOnDeath();
+        }
+
+        /// <summary>Everything you carry falls where you died, except your single most valuable item.</summary>
+        void DropItemsOnDeath()
+        {
+            if (inventory == null) return;
+            string kept;
+            System.Collections.Generic.List<ItemStack> dropped = inventory.Model.TakeAllExceptMostValuable(out kept);
+            for (int i = 0; i < dropped.Count; i++)
+            {
+                float angle = i * 2.39996f;
+                float radius = 0.5f + 0.25f * Mathf.Sqrt(i);
+                Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * radius;
+                Pickup.Spawn(dropped[i], transform.position + offset, false);
+            }
+            inventory.NotifyChanged();
+            ItemInfo keptInfo = GameContent.Item(kept);
+            if (keptInfo != null) GameLog.Add("You kept your " + keptInfo.Name + ".", GameLog.Rare);
+            if (dropped.Count > 0) GameLog.Add("Everything else is on the ground where you fell. It vanishes after 15 minutes!", GameLog.Warning);
         }
 
         void Respawn()

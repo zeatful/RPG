@@ -37,6 +37,24 @@ namespace RPG.EditorTools
             art.RockC = Prefab("SM_Env_Rock_015");
             art.Wolf = AssetDatabase.LoadAssetAtPath<GameObject>(CreatureModels[0]);
             art.Slime = AssetDatabase.LoadAssetAtPath<GameObject>(CreatureModels[1]);
+
+            art.VertexLit = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/RpgVertexLit.shader");
+            art.Water = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/RpgWater.shader");
+            art.EnemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Game/Characters/Enemy.prefab");
+            art.VillageHouse = Prefab("SM_Bld_Village_02");
+            art.Hut = Prefab("SM_Bld_Hut_01");
+            art.HouseBase = Prefab("SM_Bld_House_Base_01");
+            art.HouseRoof = Prefab("SM_Bld_House_Roof_Wood_01");
+            art.HouseDoor = Prefab("SM_Bld_House_Door_02");
+            art.Fence = Prefab("SM_Bld_Fence_02");
+            art.FireFx = Prefab("FX_Fire");
+            art.Crate = Prefab("SM_Prop_Crate_01");
+            art.Bush = Prefab("SM_Env_Bush_01");
+            art.Flower = Prefab("SM_Env_Flower_01");
+            art.Grass = Prefab("SM_Env_Grass_01");
+            art.TreeLog = Prefab("SM_Env_TreeLog_01");
+            art.Pumpkin = Prefab("SM_Prop_Pumpkin_01");
+            if (art.VertexLit == null || art.Water == null) Debug.LogWarning("[RPG Art] world shaders missing");
             EditorUtility.SetDirty(art);
             AssetDatabase.SaveAssets();
 
@@ -104,7 +122,7 @@ namespace RPG.EditorTools
         static void Report(RpgArt art)
         {
             StringBuilder text = new StringBuilder("[RPG Art] setup done\n");
-            foreach (GameObject model in new[] { art.FirTreeA, art.FirTreeB, art.RoundTree, art.TallTree, art.RockA, art.RockB, art.RockC, art.Wolf, art.Slime })
+            foreach (GameObject model in new[] { art.FirTreeA, art.FirTreeB, art.RoundTree, art.TallTree, art.RockA, art.RockB, art.RockC, art.Wolf, art.Slime, art.VillageHouse, art.Hut, art.HouseBase, art.HouseRoof, art.HouseDoor, art.Fence, art.FireFx, art.Crate, art.Bush, art.Flower, art.Grass, art.TreeLog, art.Pumpkin })
             {
                 if (model == null) continue;
                 Bounds bounds = new Bounds(Vector3.zero, Vector3.zero);

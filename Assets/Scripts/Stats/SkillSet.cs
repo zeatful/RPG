@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace RPG.Stats
 {
-    /// <summary>The player's ten skills. Saved with the existing save system (S / L keys).</summary>
+    /// <summary>The player's twelve skills. Saved with the existing save system (S / L keys).</summary>
     public class SkillSet : MonoBehaviour, ISaveable
     {
         public const int StartingVitalityLevel = 10;

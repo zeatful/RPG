@@ -7,7 +7,11 @@ using UnityEngine;
 
 namespace RPG.Gathering
 {
-    /// <summary>Player action: walk to a tree or rock and gather from it every 1.2 seconds.</summary>
+    /// <summary>
+    /// Player action: walk to a tree or rock and swing at it every 1.2 seconds. Each swing does work
+    /// (GameContent.SwingPower: tool power, more with levels above the requirement); a log/ore drops each
+    /// time the work reaches the node's hardness. Needs an axe or pickaxe in the bag.
+    /// </summary>
     public class Gatherer : MonoBehaviour, IAction
     {
         const float AttemptInterval = 1.2f;
@@ -46,6 +50,15 @@ namespace RPG.Gathering
             if (skills.GetLevel(info.Skill) < info.Level)
             {
                 GameLog.Add("You need a " + info.Skill + " level of " + info.Level + " to " + node.ActionVerb.ToLower() + " this.", GameLog.Warning);
+                return;
+            }
+            ToolKind toolKind = info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe;
+            if (inventory.BestTool(toolKind) == null)
+            {
+                string tool = toolKind == ToolKind.Axe ? "an axe" : "a pickaxe";
+                GameLog.Add(inventory.HasAnyTool(toolKind)
+                    ? "You don't have the level to use your " + (toolKind == ToolKind.Axe ? "axe" : "pickaxe") + "."
+                    : "You need " + tool + " to " + node.ActionVerb.ToLower() + " this. General stores sell them.", GameLog.Warning);
                 return;
             }
             if (!inventory.Model.CanAdd(info.ItemId, 1))
@@ -103,8 +116,16 @@ namespace RPG.Gathering
                 return;
             }
 
-            double chance = GameContent.GatherChance(skills.GetLevel(info.Skill), info.Level);
-            if (Random.value >= chance) return;
+            ItemInfo tool = inventory.BestTool(info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe);
+            if (tool == null)
+            {
+                Stop();
+                return;
+            }
+            double power = GameContent.SwingPower(skills.GetLevel(info.Skill), info.Level, tool.ToolPower);
+            target.Work += power * Random.Range(0.75f, 1.25f);
+            target.SinceSwing = 0;
+            if (target.Work < info.Hardness) return;
 
             inventory.TryAdd(info.ItemId, 1);
             skills.AddXp(info.Skill, info.Xp);
@@ -117,9 +138,9 @@ namespace RPG.Gathering
                 GameLog.Add("You also find a " + (bonus != null ? bonus.Name.ToLower() : info.BonusItemId) + "!", GameLog.Rare);
             }
 
-            if (Random.value < info.DepleteChance)
+            if (target.TakeOne())
             {
-                target.Deplete();
+                GameLog.Add(info.Kind == NodeKind.Tree ? "The tree falls." : "The rock is mined out.");
                 Stop();
             }
         }

@@ -19,6 +19,24 @@ namespace RPG.Core
         public GameObject Wolf;
         public GameObject Slime;
 
+        // World building
+        public Shader VertexLit;
+        public Shader Water;
+        public GameObject EnemyPrefab;
+        public GameObject VillageHouse;
+        public GameObject Hut;
+        public GameObject HouseBase;
+        public GameObject HouseRoof;
+        public GameObject HouseDoor;
+        public GameObject Fence;
+        public GameObject FireFx;
+        public GameObject Crate;
+        public GameObject Bush;
+        public GameObject Flower;
+        public GameObject Grass;
+        public GameObject TreeLog;
+        public GameObject Pumpkin;
+
         static RpgArt instance;
         static bool loaded;
 

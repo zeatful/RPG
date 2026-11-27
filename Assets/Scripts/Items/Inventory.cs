@@ -4,6 +4,7 @@ using RPG.Core;
 using RPG.Saving;
 using RPG.Stats;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace RPG.Items
 {
@@ -61,6 +62,15 @@ namespace RPG.Items
                 health.Heal(info.HealAmount);
                 GameLog.Add("You eat the " + info.Name + ". It heals " + info.HealAmount + ".");
             }
+            else if (GameContent.Burnables.ContainsKey(info.Id))
+            {
+                RPG.World.Firemaker firemaker = GetComponent<RPG.World.Firemaker>();
+                if (firemaker != null) firemaker.Light(info.Id);
+            }
+            else if (info.Tool != ToolKind.None)
+            {
+                GameLog.Add(info.Name + ": " + info.RequiredSkill + " " + info.RequiredLevel + ", works " + (int)Mathf.Round(info.ToolPower * 100) + "% as fast as bronze. Keep it in your bag.");
+            }
             else
             {
                 GameLog.Add(string.IsNullOrEmpty(info.Description) ? info.Name + "." : info.Description);
@@ -82,23 +92,68 @@ namespace RPG.Items
             NotifyChanged();
         }
 
-        public void Make(Recipe recipe)
+        /// <summary>Makes a recipe once. Returns true if something was made (burnt food counts).</summary>
+        public bool Make(Recipe recipe)
         {
+            if (!RPG.World.Station.IsNear(recipe.Station, transform.position))
+            {
+                GameLog.Add("You need to be next to " + RPG.World.Station.Describe(recipe.Station) + " to do that.", GameLog.Warning);
+                return false;
+            }
             string reason;
-            if (!recipe.TryMake(Model, LevelOf, out reason))
+            bool burnt;
+            if (!recipe.TryMake(Model, LevelOf, Random.value, out reason, out burnt))
             {
                 GameLog.Add(reason, GameLog.Warning);
-                return;
+                return false;
             }
-            if (skills != null) skills.AddXp(recipe.Skill, recipe.Xp);
             ItemInfo output = GameContent.Item(recipe.Output.ItemId);
-            GameLog.Add("You make a " + (output != null ? output.Name : recipe.Output.ItemId) + ".");
+            string outputName = output != null ? output.Name : recipe.Output.ItemId;
+            if (burnt)
+            {
+                GameLog.Add("You accidentally burn the " + outputName.ToLower() + ".", GameLog.Warning);
+            }
+            else
+            {
+                if (skills != null) skills.AddXp(recipe.Skill, recipe.Xp);
+                string verb = recipe.Station == StationKind.Furnace ? "smelt" : recipe.Station == StationKind.Anvil ? "hammer out" : recipe.Station == StationKind.Fire ? "cook" : "make";
+                GameLog.Add("You " + verb + " " + (recipe.Output.Quantity > 1 ? recipe.Output.Quantity + " " + outputName.ToLower() : "a " + outputName.ToLower()) + ".");
+            }
             NotifyChanged();
+            return true;
         }
 
         public bool CanMake(Recipe recipe)
         {
             return recipe.CanMake(Model, LevelOf);
+        }
+
+        /// <summary>Best tool of a kind in the bag that the player has the level to use, or null.</summary>
+        public ItemInfo BestTool(ToolKind kind)
+        {
+            ItemInfo best = null;
+            for (int i = 0; i < InventoryModel.SlotCount; i++)
+            {
+                ItemStack stack = Model.GetSlot(i);
+                if (stack.IsEmpty) continue;
+                ItemInfo info = GameContent.Item(stack.ItemId);
+                if (info == null || info.Tool != kind || LevelOf(info.RequiredSkill) < info.RequiredLevel) continue;
+                if (best == null || info.ToolPower > best.ToolPower) best = info;
+            }
+            return best;
+        }
+
+        /// <summary>True if the bag has a tool of this kind at all (even one you can't use yet).</summary>
+        public bool HasAnyTool(ToolKind kind)
+        {
+            for (int i = 0; i < InventoryModel.SlotCount; i++)
+            {
+                ItemStack stack = Model.GetSlot(i);
+                if (stack.IsEmpty) continue;
+                ItemInfo info = GameContent.Item(stack.ItemId);
+                if (info != null && info.Tool == kind) return true;
+            }
+            return false;
         }
 
         public bool IsEmpty()

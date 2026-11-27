@@ -17,6 +17,8 @@ namespace RPG.Movement
         Fighter fighter;
         ActionScheduler actionScheduler;
         Health health;
+        RPG.Stats.Stamina stamina;
+        float speedFraction = 1f;
 
         private void Start()
         {
@@ -25,12 +27,15 @@ namespace RPG.Movement
             fighter = GetComponent<Fighter>();
             actionScheduler = GetComponent<ActionScheduler>();
             health = GetComponent<Health>();
+            stamina = GetComponent<RPG.Stats.Stamina>();
         }
 
         // Update is called once per frame
         void Update()
         {
             navMeshAgent.enabled = !health.IsDead();
+            // the player walks or runs depending on stamina (picked up live when toggled)
+            if (stamina != null && navMeshAgent.enabled) navMeshAgent.speed = maxSpeed * speedFraction * stamina.SpeedMultiplier;
             UpdateAnimator();
         }
 
@@ -44,7 +49,8 @@ namespace RPG.Movement
         {
             navMeshAgent.destination = destination;
             // ensure the number is between 0 and 1 only
-            navMeshAgent.speed = maxSpeed * Mathf.Clamp01(speedFaction);
+            speedFraction = Mathf.Clamp01(speedFaction);
+            navMeshAgent.speed = maxSpeed * speedFraction * (stamina != null ? stamina.SpeedMultiplier : 1f);
             navMeshAgent.isStopped = false;
         }
 

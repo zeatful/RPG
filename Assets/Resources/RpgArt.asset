@@ -21,3 +21,20 @@ MonoBehaviour:
   RockC: {fileID: 178776, guid: 27b2a5e9e01330645a7ab5be223502ae, type: 3}
   Wolf: {fileID: 919132149155446097, guid: 8f2ae6beb828b4e65994718ac134da3e, type: 3}
   Slime: {fileID: 919132149155446097, guid: 055f0b133858c81eb840eb63566c2cd5, type: 3}
+  VertexLit: {fileID: 4800000, guid: 734da27c8607f82e0b45161b799492b5, type: 3}
+  Water: {fileID: 4800000, guid: 9a5a33ac7b086a357aa99d8ead31da9f, type: 3}
+  EnemyPrefab: {fileID: 450091427745689130, guid: 27c8c411d14e94c62905b37a30ee8dc7,
+    type: 3}
+  VillageHouse: {fileID: 103302, guid: f65a7bee03bbc4542a4af2c67922b549, type: 3}
+  Hut: {fileID: 196646, guid: 5a346deceb21d0c4781e67a70fbcc1f6, type: 3}
+  HouseBase: {fileID: 113406, guid: 8b17dbd29b0c2474d958f6a2aa5d3aa2, type: 3}
+  HouseRoof: {fileID: 177264, guid: 2b98fd7ecd6a2024e863e0a87aba16c5, type: 3}
+  HouseDoor: {fileID: 190298, guid: ed4751dea11af194482b9a88578df086, type: 3}
+  Fence: {fileID: 130724, guid: d66c89601ce96d4419ce36a4dce3c401, type: 3}
+  FireFx: {fileID: 100000, guid: 64263dff5479cd942833a649f91b239a, type: 3}
+  Crate: {fileID: 139386, guid: c2849fd453abd0445a702a035f04ac60, type: 3}
+  Bush: {fileID: 122670, guid: f7e91e1d54c5ad64f8125310343f0d30, type: 3}
+  Flower: {fileID: 142994, guid: d6389bfdb7e456640b3a45339aac60a4, type: 3}
+  Grass: {fileID: 107084, guid: 9ad607532c614c54ebd43e913aaf8857, type: 3}
+  TreeLog: {fileID: 114594, guid: e0bcb36554be1124b8a89d63037350be, type: 3}
+  Pumpkin: {fileID: 199514, guid: 626f1b816ba1ee64a9f7cea6ceb529cd, type: 3}

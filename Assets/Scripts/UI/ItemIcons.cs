@@ -50,10 +50,18 @@ namespace RPG.UI
             return sprite;
         }
 
-        enum Kind { Sword, Bow, Wand, Arrows, Plate, Leather, Logs, Ore, Bar, Meat, Bones, Hide, Coins, Gem, Spark, Seed, Map, Crown, Quill, Fang, Hook, Pet, Sack }
+        enum Kind { Sword, Bow, Wand, Arrows, Plate, Leather, Logs, Ore, Bar, Meat, Bones, Hide, Coins, Gem, Spark, Seed, Map, Crown, Quill, Fang, Hook, Pet, Sack, Axe, Pickaxe, Hammer, Flint, Bread, Cheese, Pie }
 
         static Kind KindOf(string id)
         {
+            if (id.StartsWith("pickaxe")) return Kind.Pickaxe;
+            if (id.StartsWith("axe_")) return Kind.Axe;
+            if (id == "hammer") return Kind.Hammer;
+            if (id.StartsWith("flint")) return Kind.Flint;
+            if (id == "bread") return Kind.Bread;
+            if (id == "cheese") return Kind.Cheese;
+            if (id.Contains("pie")) return Kind.Pie;
+            if (id.Contains("steak")) return Kind.Meat;
             if (id.StartsWith("sword")) return Kind.Sword;
             if (id.Contains("bow")) return Kind.Bow;
             if (id.StartsWith("wand")) return Kind.Wand;
@@ -264,6 +272,58 @@ namespace RPG.UI
                     c.Disc(12, 18, 2.6f, White); c.Disc(20, 18, 2.6f, White);
                     c.Disc(12.6f, 18.6f, 1.3f, Outline); c.Disc(20.6f, 18.6f, 1.3f, Outline);
                     c.Line(14, 23.5f, 18, 23.5f, 1f, Outline);
+                    break;
+                case Kind.Axe:
+                    c.Line(7, 28, 22, 6, 2.6f, Wood);
+                    c.Line(8, 26, 21, 7, 0.8f, Hex("#8A6A4A"));
+                    c.Poly(m, new Vector2(17, 6), new Vector2(23, 3), new Vector2(29, 8), new Vector2(28, 16), new Vector2(23, 13), new Vector2(20, 11));
+                    c.Poly(l, new Vector2(23, 3), new Vector2(29, 8), new Vector2(28, 16), new Vector2(27, 9));
+                    sparkles.Add(new Vector2(27, 6));
+                    break;
+                case Kind.Pickaxe:
+                    c.Line(8, 28, 20, 8, 2.6f, Wood);
+                    for (float a = 200f; a < 340f; a += 10f)
+                    {
+                        Vector2 p = Arc(19, 15, 12, a);
+                        Vector2 q = Arc(19, 15, 12, a + 10f);
+                        c.Line(p.x, p.y, q.x, q.y, a > 250f && a < 290f ? 3.4f : 2.4f, m);
+                    }
+                    for (float a = 210f; a < 330f; a += 10f)
+                    {
+                        Vector2 p = Arc(19, 14, 12, a);
+                        Vector2 q = Arc(19, 14, 12, a + 10f);
+                        c.Line(p.x, p.y, q.x, q.y, 0.8f, l);
+                    }
+                    break;
+                case Kind.Hammer:
+                    c.Line(8, 28, 18, 12, 2.6f, Wood);
+                    c.Poly(m, new Vector2(12, 4), new Vector2(26, 13), new Vector2(23, 18), new Vector2(9, 9));
+                    c.Poly(l, new Vector2(12, 4), new Vector2(26, 13), new Vector2(25, 14.5f), new Vector2(11, 5.5f));
+                    break;
+                case Kind.Flint:
+                    c.Ellipse(11, 20, 7, 6, Hex("#5A5550"));
+                    c.Ellipse(9, 18, 3, 2, Hex("#8A8580"));
+                    c.Rect(15, 9, 13, 5, m);
+                    c.Rect(15, 9, 13, 1.5f, l);
+                    c.Poly(m, new Vector2(15, 9), new Vector2(17, 14), new Vector2(14, 18), new Vector2(12, 14));
+                    sparkles.Add(new Vector2(16, 20)); sparkles.Add(new Vector2(20, 18)); sparkles.Add(new Vector2(18, 23));
+                    sparkleColor = Hex("#FFD24A");
+                    break;
+                case Kind.Bread:
+                    c.Ellipse(16, 18, 12, 8, m);
+                    c.Ellipse(16, 15, 11, 6, l);
+                    c.Line(10, 12, 12, 16, 1f, d); c.Line(15, 11, 17, 15, 1f, d); c.Line(20, 11, 22, 15, 1f, d);
+                    break;
+                case Kind.Cheese:
+                    c.Poly(m, new Vector2(4, 22), new Vector2(26, 10), new Vector2(28, 24), new Vector2(6, 26));
+                    c.Poly(l, new Vector2(4, 22), new Vector2(26, 10), new Vector2(28, 13), new Vector2(7, 23));
+                    c.Disc(14, 22, 1.6f, d); c.Disc(21, 20, 1.3f, d); c.Disc(24, 23, 1.0f, d);
+                    break;
+                case Kind.Pie:
+                    c.Ellipse(16, 20, 12, 7, Hex("#8A5A2A"));
+                    c.Ellipse(16, 17, 11, 6, m);
+                    c.Ellipse(14, 15, 5, 2.2f, l);
+                    c.Line(11, 17, 15, 17, 1f, d); c.Line(18, 18, 22, 17, 1f, d);
                     break;
                 default:
                     c.Ellipse(16, 19, 9.5f, 9, m);

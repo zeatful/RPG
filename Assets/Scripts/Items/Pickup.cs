@@ -8,12 +8,15 @@ namespace RPG.Items
     /// <summary>A loot item lying on the ground. Click it to walk over and pick it up.</summary>
     public class Pickup : MonoBehaviour
     {
-        const float Lifetime = 180f;
+        // Anything left on the ground vanishes for good after 15 minutes.
+        public const float Lifetime = 900f;
 
         public ItemStack Stack;
         public bool Special;
 
         float age;
+
+        public float SecondsLeft { get { return Mathf.Max(0f, Lifetime - age); } }
         Vector3 basePosition;
         float phase;
 

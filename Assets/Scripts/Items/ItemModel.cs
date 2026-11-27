@@ -11,6 +11,25 @@ namespace RPG.Items
         Body
     }
 
+    /// <summary>Gathering tools: the best one in your bag that you have the level for is used.</summary>
+    public enum ToolKind
+    {
+        None,
+        Axe,
+        Pickaxe
+    }
+
+    /// <summary>Where a recipe has to be made.</summary>
+    public enum StationKind
+    {
+        None,
+        Furnace,
+        Anvil,
+        Fire,
+        Bank,
+        Shop
+    }
+
     /// <summary>Static definition of an item. Pure C#.</summary>
     public class ItemInfo
     {
@@ -36,6 +55,13 @@ namespace RPG.Items
 
         // Left-click in the inventory summons or dismisses a follower.
         public bool IsPet;
+
+        // Base price in coins. Shops sell at this price and buy back at SellRate of it.
+        public int Value;
+
+        // Axes and pickaxes: work done per swing (bronze 1.0). RequiredSkill/Level gate their use.
+        public ToolKind Tool = ToolKind.None;
+        public float ToolPower;
 
         public bool IsEquippable { get { return Slot != EquipSlot.None; } }
         public bool IsEdible { get { return HealAmount > 0; } }
@@ -227,6 +253,54 @@ namespace RPG.Items
             return total;
         }
 
+        /// <summary>
+        /// On death: keep only the single most valuable item (by item Value; equipment counts), remove
+        /// everything else and return it so it can be dropped on the ground. keptId is null if nothing
+        /// was worth keeping. Coins have no item value, so they are always dropped. If the kept item is a
+        /// stack (e.g. arrows) the whole stack is kept.
+        /// </summary>
+        public List<ItemStack> TakeAllExceptMostValuable(out string keptId)
+        {
+            // find the most valuable single item and where it is: -1 weapon, -2 body, else a slot
+            int bestValue = 0;
+            int bestWhere = int.MinValue;
+            keptId = null;
+            CheckBest(WeaponId, -1, ref bestValue, ref bestWhere, ref keptId);
+            CheckBest(BodyId, -2, ref bestValue, ref bestWhere, ref keptId);
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (!slots[i].IsEmpty) CheckBest(slots[i].ItemId, i, ref bestValue, ref bestWhere, ref keptId);
+            }
+
+            List<ItemStack> dropped = new List<ItemStack>();
+            if (!string.IsNullOrEmpty(WeaponId) && bestWhere != -1)
+            {
+                dropped.Add(new ItemStack(WeaponId, 1));
+                WeaponId = null;
+            }
+            if (!string.IsNullOrEmpty(BodyId) && bestWhere != -2)
+            {
+                dropped.Add(new ItemStack(BodyId, 1));
+                BodyId = null;
+            }
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (slots[i].IsEmpty || i == bestWhere) continue;
+                dropped.Add(slots[i]);
+                slots[i] = new ItemStack();
+            }
+            return dropped;
+        }
+
+        void CheckBest(string id, int where, ref int bestValue, ref int bestWhere, ref string bestId)
+        {
+            ItemInfo info = string.IsNullOrEmpty(id) ? null : lookup(id);
+            if (info == null || info.Value <= bestValue) return;
+            bestValue = info.Value;
+            bestWhere = where;
+            bestId = id;
+        }
+
         public InventorySaveData Capture()
         {
             InventorySaveData data = new InventorySaveData();
@@ -283,6 +357,18 @@ namespace RPG.Items
         public List<ItemStack> Inputs = new List<ItemStack>();
         public ItemStack Output;
 
+        // Where it has to be made (None = anywhere), and a tool that must be in the bag but isn't used up.
+        public StationKind Station = StationKind.None;
+        public string ToolId;
+
+        // Cooking: chance to get this item instead (see BurnChance). Burnt food gives no xp.
+        public string BurntItemId;
+
+        public bool HasTool(InventoryModel inventory)
+        {
+            return string.IsNullOrEmpty(ToolId) || inventory.Count(ToolId) > 0;
+        }
+
         public bool HasLevel(Func<Skill, int> levelOf)
         {
             return levelOf(Skill) >= Level;
@@ -299,14 +385,26 @@ namespace RPG.Items
 
         public bool CanMake(InventoryModel inventory, Func<Skill, int> levelOf)
         {
-            return HasLevel(levelOf) && HasInputs(inventory);
+            return HasLevel(levelOf) && HasInputs(inventory) && HasTool(inventory);
         }
 
         /// <summary>Consumes inputs and adds output. Returns false (and changes nothing) if it can't be made.</summary>
         public bool TryMake(InventoryModel inventory, Func<Skill, int> levelOf, out string failReason)
         {
+            bool burnt;
+            return TryMake(inventory, levelOf, 1.0, out failReason, out burnt);
+        }
+
+        /// <summary>
+        /// As TryMake, for food that can burn: roll01 is a random value in [0,1); below the burn chance
+        /// the burnt item is produced instead and burnt is set.
+        /// </summary>
+        public bool TryMake(InventoryModel inventory, Func<Skill, int> levelOf, double roll01, out string failReason, out bool burnt)
+        {
             failReason = null;
+            burnt = false;
             if (!HasLevel(levelOf)) { failReason = "You need " + Skill + " level " + Level + " to make that."; return false; }
+            if (!HasTool(inventory)) { failReason = "You need a " + ToolId.Replace('_', ' ') + " to make that."; return false; }
             if (!HasInputs(inventory)) { failReason = "You don't have the materials."; return false; }
 
             foreach (ItemStack input in Inputs) inventory.Remove(input.ItemId, input.Quantity);
@@ -319,8 +417,22 @@ namespace RPG.Items
                 return false;
             }
 
+            if (!string.IsNullOrEmpty(BurntItemId) && roll01 < BurnChance(levelOf(Skill)))
+            {
+                burnt = true;
+                inventory.Add(BurntItemId, Output.Quantity);
+                return true;
+            }
             inventory.Add(Output.ItemId, Output.Quantity);
             return true;
+        }
+
+        /// <summary>Cooking burn chance: 50% at the requirement, falling to 0 twenty levels above it.</summary>
+        public double BurnChance(int level)
+        {
+            if (string.IsNullOrEmpty(BurntItemId)) return 0;
+            double chance = 0.5 - (level - Level) * 0.025;
+            return chance < 0 ? 0 : chance > 0.5 ? 0.5 : chance;
         }
     }
 }

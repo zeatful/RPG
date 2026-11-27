@@ -11,12 +11,14 @@ namespace RPG.Stats
         Woodcutting,
         Mining,
         Smithing,
-        Crafting
+        Crafting,
+        Pyro,
+        Cooking
     }
 
     public static class SkillInfo
     {
-        public const int Count = 10;
+        public const int Count = 12;
 
         public static string Name(Skill skill)
         {

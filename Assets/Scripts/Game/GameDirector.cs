@@ -49,19 +49,35 @@ namespace RPG.Game
             if (player == null) return;
 
             SetupPlayer(player);
-            GameObject bossTemplate = FindBossTemplate();
-            SetupEnemies();
-            Vector3? lair = SpawnBoss(bossTemplate, player.transform.position);
-            gameObject.AddComponent<DayNightCycle>();
-            SpawnNodes(player.transform.position, lair);
+            if (IsWorldScene)
+            {
+                gameObject.AddComponent<DayNightCycle>();
+                RPG.World.WorldBuilder.Build(player);
+            }
+            else
+            {
+                // the original small Sandbox level
+                GameObject bossTemplate = FindBossTemplate();
+                SetupEnemies();
+                Vector3? lair = SpawnBoss(bossTemplate, player.transform.position);
+                gameObject.AddComponent<DayNightCycle>();
+                SpawnNodes(player.transform.position, lair);
+            }
             gameObject.AddComponent<RpgHud>();
 
             GameLog.Clear();
-            GameLog.Add("Welcome! Click trees and rocks to gather, enemies to fight, loot to pick it up.");
-            GameLog.Add("I = inventory and crafting, K = skills, S / L = save / load.");
+            GameLog.Add("Welcome to Brookhollow! Click trees and rocks to gather, enemies to fight, loot to pick it up.");
+            GameLog.Add("Bank chests, shops, furnaces and anvils are in every town square. Click them to use them.");
+            GameLog.Add("I = inventory, K = skills, M = world map, S / L = save / load.");
 
             if (SmokeTest.Requested) gameObject.AddComponent<SmokeTest>();
             if (Showcase.RequestedDir != null) gameObject.AddComponent<Showcase>();
+        }
+
+        /// <summary>The generated open world lives in the scene called "World".</summary>
+        public static bool IsWorldScene
+        {
+            get { return SceneManager.GetActiveScene().name == "World"; }
         }
 
         static T Ensure<T>(GameObject go) where T : Component
@@ -79,11 +95,21 @@ namespace RPG.Game
             Ensure<PlayerStats>(player);
             Ensure<Gatherer>(player);
             Ensure<PickupCollector>(player);
+            Ensure<Bank>(player);
+            Ensure<Stamina>(player);
+            Ensure<RPG.World.StationUser>(player);
+            Ensure<RPG.World.Crafter>(player);
+            Ensure<RPG.World.Firemaker>(player);
 
             if (inventory.IsEmpty())
             {
+                // starter kit: enough to chop, mine and smith; buy a flint and steel to make fires
                 inventory.Model.SetEquipped("sword_bronze", null);
-                inventory.TryAdd("raw_meat", 2);
+                inventory.TryAdd("axe_bronze", 1);
+                inventory.TryAdd("pickaxe_bronze", 1);
+                inventory.TryAdd(GameContent.HammerId, 1);
+                inventory.TryAdd("bread", 3);
+                inventory.TryAdd("coins", 25);
             }
         }
 

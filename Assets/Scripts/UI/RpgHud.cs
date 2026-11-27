@@ -6,6 +6,7 @@ using RPG.Core;
 using RPG.Gathering;
 using RPG.Items;
 using RPG.Stats;
+using RPG.World;
 using UnityEngine;
 
 namespace RPG.UI
@@ -13,13 +14,14 @@ namespace RPG.UI
     /// <summary>
     /// Immediate-mode HUD (OnGUI) so it needs no prefabs or canvas setup:
     /// HP bar, chat log, XP drops, level-up banner, hitsplats, enemy nameplates,
-    /// hover tooltips, inventory + crafting panel (I) and skills panel (K).
+    /// hover tooltips, inventory + crafting panel (I), skills panel (K), minimap and world map (M),
+    /// and the bank / shop / furnace / anvil / fire panels when the player is at one.
     /// </summary>
     public class RpgHud : MonoBehaviour
     {
         const float NameplateRange = 25f;
         const int Columns = 4;
-        const float Cell = 54f;
+        float Cell = 54f;
 
         struct FloatingText
         {
@@ -42,10 +44,23 @@ namespace RPG.UI
         Health health;
         PlayerStats stats;
 
+        Bank bank;
+        Stamina stamina;
+        StationUser stationUser;
+        Crafter crafter;
+
         bool showInventory = true;
         bool showSkills = false;
+        bool showMap = false;
         bool craftingTab = false;
         Vector2 recipeScroll;
+        Vector2 stationScroll;
+
+        // the map is drawn turned so the camera's forward direction is up
+        Texture2D mapTexture;
+        float mapYaw;
+        const float MinimapMeters = 130f;
+        string currentZone;
 
         readonly List<FloatingText> xpDrops = new List<FloatingText>();
         readonly List<Hitsplat> hitsplats = new List<Hitsplat>();
@@ -66,6 +81,17 @@ namespace RPG.UI
             inventory = player.GetComponent<Inventory>();
             health = player.GetComponent<Health>();
             stats = player.GetComponent<PlayerStats>();
+            bank = player.GetComponent<Bank>();
+            stamina = player.GetComponent<Stamina>();
+            stationUser = player.GetComponent<StationUser>();
+            crafter = player.GetComponent<Crafter>();
+
+            if (WorldBuilder.Root != null)
+            {
+                float cameraYaw = Camera.main != null ? Camera.main.transform.eulerAngles.y : 0f;
+                mapYaw = Mathf.Round(cameraYaw / 90f) * 90f;
+                mapTexture = WorldTerrain.MapTexture(320, mapYaw);
+            }
 
             skills.onXpGained += OnXpGained;
             skills.onLevelUp += OnLevelUp;
@@ -114,7 +140,27 @@ namespace RPG.UI
         {
             if (Input.GetKeyDown(KeyCode.I)) showInventory = !showInventory;
             if (Input.GetKeyDown(KeyCode.K)) showSkills = !showSkills;
+            if (Input.GetKeyDown(KeyCode.M) && mapTexture != null) showMap = !showMap;
             UpdateHover();
+            UpdateZone();
+        }
+
+        void UpdateZone()
+        {
+            if (WorldBuilder.Root == null || player == null) return;
+            Vector2 p = new Vector2(player.transform.position.x, player.transform.position.z);
+            float townDistance;
+            TownInfo town = WorldLayout.NearestTown(p, out townDistance);
+            string zone = townDistance < TownInfo.FlatRadius ? town.Name : WorldLayout.ZoneAt(p).Name;
+            if (zone == currentZone) return;
+            bool first = currentZone == null;
+            currentZone = zone;
+            if (first) return;
+            string text = townDistance < TownInfo.FlatRadius ? "Welcome to " + town.Name : "Entering " + zone + " (levels " + WorldLayout.ZoneAt(p).Levels + ")";
+            banner.Text = text;
+            banner.Time = Time.time;
+            banner.Color = new Color(1f, 0.92f, 0.65f);
+            GameLog.Add(text + ".");
         }
 
         void UpdateHover()
@@ -138,15 +184,31 @@ namespace RPG.UI
                     hoverText = "Take " + pickup.Label;
                     return;
                 }
+                Station station = hit.transform.GetComponentInParent<Station>();
+                if (station != null)
+                {
+                    hoverText = station.Verb + " " + station.Label;
+                    return;
+                }
                 ResourceNode node = hit.transform.GetComponentInParent<ResourceNode>();
                 if (node != null)
                 {
-                    hoverText = node.IsDepleted
-                        ? node.Info.Name + " (depleted)"
-                        : node.ActionVerb + " " + node.Info.Name + " (" + node.Info.Skill + " " + node.Info.Level + ")";
+                    hoverText = node.IsDepleted ? node.Info.Name + " (depleted)" : NodeHover(node);
                     return;
                 }
             }
+        }
+
+        string NodeHover(ResourceNode node)
+        {
+            NodeInfo info = node.Info;
+            string text = node.ActionVerb + " " + info.Name + " (" + info.Skill + " " + info.Level + ")";
+            int level = skills.GetLevel(info.Skill);
+            ItemInfo tool = inventory.BestTool(info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe);
+            if (level < info.Level) return text + "\nYou need " + info.Skill + " " + info.Level;
+            if (tool == null) return text + "\nYou need " + (info.Kind == NodeKind.Tree ? "an axe" : "a pickaxe");
+            int swings = GameContent.SwingsNeeded(info, level, tool.ToolPower);
+            return text + "\n~" + swings + " swing" + (swings == 1 ? "" : "s") + " per " + (info.Kind == NodeKind.Tree ? "log" : "ore") + " with your " + tool.Name.ToLower();
         }
 
         // ---------------------------------------------------------------- GUI
@@ -173,18 +235,28 @@ namespace RPG.UI
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
             float width = Screen.width / scale;
             float height = Screen.height / scale;
+            // shrink inventory cells on short screens so the bag fits under the minimap
+            float room = height - 40f - (mapTexture != null ? 214f : 20f) - 168f;
+            Cell = Mathf.Clamp(Mathf.Floor(room / 7f), 40f, 54f);
 
             if (Event.current.type == EventType.Layout) panelRects.Clear();
 
+            DrawWorldLabels();
+            DrawNodeProgress();
             DrawNameplates();
             DrawHitsplats();
             DrawStatusBar();
             DrawBossBar(width);
+            DrawMinimap(width);
             DrawXpDrops(width);
             DrawBanner(width);
             DrawLog(height);
+            Station open = stationUser != null ? stationUser.Open : null;
+            if (open != null) showInventory = true;
             if (showInventory) DrawInventory(width, height);
+            if (open != null) DrawStationPanel(open, width, height);
             if (showSkills) DrawSkills(height);
+            if (showMap) DrawWorldMap(width, height);
             DrawHelp(width, height);
             DrawHoverTooltip();
 
@@ -284,17 +356,32 @@ namespace RPG.UI
 
         void DrawStatusBar()
         {
-            Rect rect = new Rect(12, 12, 250, 56);
+            Rect rect = new Rect(12, 12, 250, 78);
             Panel(rect);
             float fraction = health.GetFraction();
             Rect bar = new Rect(22, 22, 230, 18);
             Box(bar, new Color(0.45f, 0.05f, 0.05f, 1f));
             Box(new Rect(bar.x, bar.y, bar.width * fraction, bar.height), new Color(0.15f, 0.75f, 0.2f, 1f));
             Shadow(bar, "HP " + Mathf.CeilToInt(health.GetHealth()) + " / " + Mathf.CeilToInt(health.GetMaxHealth()), shadowed, Color.white);
-            GUI.Label(new Rect(22, 43, 230, 20), "Combat level " + skills.CombatLevel() + "    Total level " + skills.TotalLevel(), small);
+            GUI.Label(new Rect(22, 65, 230, 20), "Combat level " + skills.CombatLevel() + "    Total level " + skills.TotalLevel(), small);
+
+            // run energy: drains while running, refills while walking or standing
+            if (stamina != null)
+            {
+                StaminaModel model = stamina.Model;
+                Rect energy = new Rect(22, 44, 166, 14);
+                Box(energy, new Color(0.2f, 0.18f, 0.1f, 1f));
+                Box(new Rect(energy.x, energy.y, energy.width * model.Energy / StaminaModel.Max, energy.height), model.Running ? new Color(0.95f, 0.75f, 0.2f, 1f) : new Color(0.6f, 0.55f, 0.4f, 1f));
+                Shadow(energy, "Stamina " + Mathf.FloorToInt(model.Energy), small, Color.white);
+                if (GUI.Button(new Rect(194, 42, 58, 18), model.Running ? "Run" : "Walk")) stamina.Toggle();
+                if (new Rect(22, 42, 230, 18).Contains(Event.current.mousePosition))
+                {
+                    slotTooltip = (model.Running ? "Running" : "Walking") + " (R to toggle)\nRunning drains stamina; walking or resting refills it.";
+                }
+            }
             if (DayNightCycle.Instance != null)
             {
-                Shadow(new Rect(12, 70, 250, 18), DayNightCycle.Instance.ClockText, small, new Color(1f, 1f, 1f, 0.85f));
+                Shadow(new Rect(12, 92, 250, 18), DayNightCycle.Instance.ClockText, small, new Color(1f, 1f, 1f, 0.85f));
             }
         }
 
@@ -325,7 +412,8 @@ namespace RPG.UI
                 }
                 Color color = drop.Color;
                 color.a = Mathf.Clamp01(2.5f - age);
-                Shadow(new Rect(width - 260, y - age * 25f, 240, 20), drop.Text + " xp", bold, color);
+                float x = mapTexture != null ? width - 460 : width - 260;
+                Shadow(new Rect(x, y - age * 25f, 240, 20), drop.Text + " xp", bold, color);
                 y += 20;
             }
         }
@@ -357,7 +445,7 @@ namespace RPG.UI
         void DrawHelp(float width, float height)
         {
             Shadow(new Rect(12, height - 28, width - 24, 20),
-                "Click: move / attack / gather / loot     I: inventory     K: skills     S / L: save / load",
+                "Click: move / attack / gather / loot / use     R: walk/run     I: inventory     K: skills     M: map     Esc: close     S / L: save / load",
                 small, new Color(1, 1, 1, 0.8f));
         }
 
@@ -388,18 +476,19 @@ namespace RPG.UI
             float x = rect.x + 12;
             float y = rect.y + 10;
 
-            if (GUI.Toggle(new Rect(x, y, 104, 24), !craftingTab, "Bag", "Button")) craftingTab = false;
-            if (GUI.Toggle(new Rect(x + 112, y, 104, 24), craftingTab, "Make", "Button")) craftingTab = true;
+            float tab = (panelWidth - 32) / 2f;
+            if (GUI.Toggle(new Rect(x, y, tab, 24), !craftingTab, "Bag", "Button")) craftingTab = false;
+            if (GUI.Toggle(new Rect(x + tab + 8, y, tab, 24), craftingTab, "Make", "Button")) craftingTab = true;
             y += 32;
 
             InventoryModel model = inventory.Model;
 
             // equipment
-            y = DrawEquipRow(x, y, "Weapon", model.WeaponId, EquipSlot.Weapon);
-            y = DrawEquipRow(x, y, "Body", model.BodyId, EquipSlot.Body);
+            y = DrawEquipRow(x, y, panelWidth - 24, "Weapon", model.WeaponId, EquipSlot.Weapon);
+            y = DrawEquipRow(x, y, panelWidth - 24, "Body", model.BodyId, EquipSlot.Body);
             GUI.Label(new Rect(x, y, panelWidth, 18),
-                "Atk +" + model.TotalAttackBonus() + "   Str +" + model.TotalStrengthBonus() + "   Def +" + model.TotalDefenseBonus()
-                + "   Max hit " + CombatMath.MaxHit(stats.StrengthLevel, model.TotalStrengthBonus()), small);
+                "Atk +" + model.TotalAttackBonus() + "  Str +" + model.TotalStrengthBonus() + "  Def +" + model.TotalDefenseBonus()
+                + "  Hit " + CombatMath.MaxHit(stats.StrengthLevel, model.TotalStrengthBonus()), small);
             y += 18;
             ItemInfo weapon = GameContent.Item(model.WeaponId);
             string styleText = "Style: " + stats.Style;
@@ -415,14 +504,14 @@ namespace RPG.UI
             else DrawSlots(x, y);
         }
 
-        float DrawEquipRow(float x, float y, string slotName, string itemId, EquipSlot slot)
+        float DrawEquipRow(float x, float y, float width, string slotName, string itemId, EquipSlot slot)
         {
             ItemInfo info = GameContent.Item(itemId);
             GUI.Label(new Rect(x, y, 60, 20), slotName + ":", bold);
             Texture2D icon = info != null ? ItemIcons.Get(itemId) : null;
             if (icon != null) GUI.DrawTexture(new Rect(x + 58, y, 20, 20), icon, ScaleMode.ScaleToFit);
-            GUI.Label(new Rect(x + 80, y, 100, 20), info != null ? info.Name : "-", label);
-            if (info != null && GUI.Button(new Rect(x + 180, y, 36, 18), "Off")) inventory.Unequip(slot);
+            GUI.Label(new Rect(x + 80, y, width - 118, 20), info != null ? info.Name : "-", label);
+            if (info != null && GUI.Button(new Rect(x + width - 36, y, 36, 18), "Off")) inventory.Unequip(slot);
             return y + 22;
         }
 
@@ -448,12 +537,38 @@ namespace RPG.UI
 
                 if (cell.Contains(e.mousePosition))
                 {
-                    slotTooltip = ItemTooltip(info);
-                    if (e.type == EventType.MouseDown)
+                    Station open = stationUser != null ? stationUser.Open : null;
+                    if (open != null && open.Kind == StationKind.Bank)
                     {
-                        if (e.button == 0) inventory.UseSlot(i);
-                        else if (e.button == 1) inventory.DropSlot(i);
-                        e.Use();
+                        slotTooltip = info.Name + "\nLeft-click: deposit " + (info.Stackable ? "all" : "1") + "    Right-click: deposit all";
+                        if (e.type == EventType.MouseDown)
+                        {
+                            bank.Deposit(info.Id, e.button == 0 && !info.Stackable ? 1 : int.MaxValue);
+                            e.Use();
+                        }
+                    }
+                    else if (open != null && open.Kind == StationKind.Shop)
+                    {
+                        int price = GameContent.SellPrice(info.Id);
+                        slotTooltip = info.Name + (price > 0 ? "\nShop pays " + price + " coins each" : "\nShops won't buy this") + "\nLeft-click: sell 1    Right-click: sell all";
+                        if (e.type == EventType.MouseDown)
+                        {
+                            string message;
+                            ShopLogic.TrySell(inventory.Model, info.Id, e.button == 0 ? 1 : int.MaxValue, out message);
+                            if (message != null) GameLog.Add(message);
+                            inventory.NotifyChanged();
+                            e.Use();
+                        }
+                    }
+                    else
+                    {
+                        slotTooltip = ItemTooltip(info);
+                        if (e.type == EventType.MouseDown)
+                        {
+                            if (e.button == 0) inventory.UseSlot(i);
+                            else if (e.button == 1) inventory.DropSlot(i);
+                            e.Use();
+                        }
                     }
                 }
             }
@@ -486,11 +601,22 @@ namespace RPG.UI
             {
                 text += "\nHeals " + info.HealAmount + "\nLeft-click: eat    Right-click: drop";
             }
+            else if (info.Tool != ToolKind.None)
+            {
+                text += "\n" + (info.Tool == ToolKind.Axe ? "Axe" : "Pickaxe") + ": needs " + info.RequiredSkill + " " + info.RequiredLevel
+                    + ", " + Mathf.RoundToInt(info.ToolPower * 100f) + "% swing power\nKeep it in your bag.    Right-click: drop";
+            }
+            else if (GameContent.Burnables.ContainsKey(info.Id))
+            {
+                BurnInfo burn = GameContent.Burnables[info.Id];
+                text += "\nPyro " + burn.Level + " to burn (" + burn.Xp + " xp)\nLeft-click: light a fire (needs flint and steel)    Right-click: drop";
+            }
             else
             {
                 if (!string.IsNullOrEmpty(info.Description)) text += "\n" + info.Description;
                 text += "\nRight-click: drop";
             }
+            if (info.Value > 0) text += "\nValue " + info.Value + " coins (shops pay " + GameContent.SellPrice(info.Id) + ")";
             return text;
         }
 
@@ -506,10 +632,17 @@ namespace RPG.UI
             return name.Length <= 9 ? name : name.Substring(0, 8) + ".";
         }
 
+        static List<Recipe> RecipesAt(StationKind station)
+        {
+            return GameContent.Recipes.FindAll(r => r.Station == station);
+        }
+
         void DrawRecipes(Rect area)
         {
-            List<Recipe> recipes = GameContent.Recipes;
+            List<Recipe> recipes = RecipesAt(StationKind.None);
             float rowHeight = 46;
+            GUI.Label(new Rect(area.x, area.y, area.width, 18), "Smelt at furnaces, smith at anvils, cook on fires.", small);
+            area = new Rect(area.x, area.y + 20, area.width, area.height - 20);
             Rect view = new Rect(0, 0, area.width - 18, recipes.Count * rowHeight);
             recipeScroll = GUI.BeginScrollView(area, recipeScroll, view);
 
@@ -535,6 +668,11 @@ namespace RPG.UI
         string Inputs(Recipe recipe)
         {
             List<string> parts = new List<string>();
+            if (!string.IsNullOrEmpty(recipe.ToolId))
+            {
+                ItemInfo tool = GameContent.Item(recipe.ToolId);
+                if (inventory.Model.Count(recipe.ToolId) == 0) parts.Add("needs a " + (tool != null ? tool.Name.ToLower() : recipe.ToolId));
+            }
             foreach (ItemStack input in recipe.Inputs)
             {
                 ItemInfo info = GameContent.Item(input.ItemId);
@@ -544,12 +682,314 @@ namespace RPG.UI
             return string.Join(", ", parts.ToArray());
         }
 
+        // ---------------------------------------------------------------- World labels, progress bars
+
+        void DrawWorldLabels()
+        {
+            if (Camera.main == null || WorldBuilder.Root == null) return;
+            Vector3 me = player.transform.position;
+            foreach (TownInfo town in WorldLayout.Towns)
+            {
+                Vector3 centre = new Vector3(town.Center.x, me.y, town.Center.y);
+                float distance = RpgUtil.FlatDistance(centre, me);
+                if (distance > 90f || distance < 6f) continue;
+                Vector2 pos;
+                if (!WorldToGui(new Vector3(town.Center.x, WorldTerrain.GroundY(town.Center.x, town.Center.y) + 9f, town.Center.y), out pos)) continue;
+                Color color = new Color(1f, 0.88f, 0.55f, Mathf.Clamp01((90f - distance) / 20f));
+                Shadow(new Rect(pos.x - 120, pos.y - 14, 240, 28), town.Name, title, color);
+            }
+            float toSpawn = RpgUtil.FlatDistance(WorldBuilder.StartPosition, me);
+            Vector2 spawnPos;
+            if (toSpawn < 16f && WorldToGui(WorldBuilder.StartPosition + Vector3.up * 2.4f, out spawnPos))
+            {
+                Shadow(new Rect(spawnPos.x - 90, spawnPos.y - 9, 180, 18), "Spawn point", shadowed, new Color(0.6f, 0.95f, 1f, Mathf.Clamp01((16f - toSpawn) / 4f)));
+            }
+            foreach (Station station in Station.All)
+            {
+                if (station.Kind == StationKind.Fire && station.Town == null) continue;
+                float distance = RpgUtil.FlatDistance(station.transform.position, me);
+                if (distance > 14f) continue;
+                Vector2 pos;
+                float lift = station.Kind == StationKind.Furnace ? 3.8f : station.Kind == StationKind.Shop ? 3.0f : 2.3f;
+                if (!WorldToGui(station.transform.position + Vector3.up * lift, out pos)) continue;
+                if (station.GetComponent<Animator>() != null) continue; // NPCs share the label of their counter
+                Shadow(new Rect(pos.x - 90, pos.y - 9, 180, 18), station.Label, shadowed, new Color(0.85f, 0.95f, 1f, Mathf.Clamp01((14f - distance) / 4f)));
+            }
+        }
+
+        void DrawNodeProgress()
+        {
+            if (Camera.main == null) return;
+            Vector3 me = player.transform.position;
+            foreach (ResourceNode node in ResourceNode.Active)
+            {
+                if (node.IsDepleted || node.SinceSwing > 1.6f) continue;
+                if (RpgUtil.FlatDistance(node.transform.position, me) > 8f) continue;
+                Vector2 pos;
+                float lift = node.Info.Kind == NodeKind.Tree ? 3.2f : 1.6f;
+                if (!WorldToGui(node.transform.position + Vector3.up * lift, out pos)) continue;
+                Rect bar = new Rect(pos.x - 32, pos.y, 64, 8);
+                Box(new Rect(bar.x - 1, bar.y - 1, bar.width + 2, bar.height + 2), new Color(0, 0, 0, 0.8f));
+                Box(bar, new Color(0.25f, 0.22f, 0.18f, 1f));
+                Box(new Rect(bar.x, bar.y, bar.width * node.Progress, bar.height), new Color(0.95f, 0.75f, 0.25f, 1f));
+            }
+        }
+
+        // ---------------------------------------------------------------- Maps
+
+        Vector2 MapUv(Vector3 world)
+        {
+            float yaw = mapYaw * Mathf.Deg2Rad;
+            Vector2 forward = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
+            Vector2 right = new Vector2(Mathf.Cos(yaw), -Mathf.Sin(yaw));
+            Vector2 p = new Vector2(world.x, world.z);
+            float extent = WorldLayout.Extent;
+            return new Vector2((Vector2.Dot(p, right) + extent) / (2f * extent), (Vector2.Dot(p, forward) + extent) / (2f * extent));
+        }
+
+        void DrawMinimap(float width)
+        {
+            if (mapTexture == null) return;
+            float size = 180f;
+            Rect frame = new Rect(width - size - 16, 12, size + 4, size + 22);
+            Panel(frame);
+            Rect rect = new Rect(frame.x + 2, frame.y + 2, size, size);
+
+            Vector2 centre = MapUv(player.transform.position);
+            float span = MinimapMeters / (2f * WorldLayout.Extent);
+            Rect uv = new Rect(centre.x - span * 0.5f, centre.y - span * 0.5f, span, span);
+            GUI.DrawTextureWithTexCoords(rect, mapTexture, uv);
+
+            foreach (Station station in Station.All)
+            {
+                if (station.Kind == StationKind.Fire && station.Town == null) continue;
+                if (station.GetComponent<Animator>() != null) continue;
+                Vector2 p;
+                if (!MiniPoint(rect, uv, station.transform.position, out p)) continue;
+                string letter = station.Kind == StationKind.Bank ? "B" : station.Kind == StationKind.Shop ? "$" : station.Kind == StationKind.Furnace ? "F" : station.Kind == StationKind.Anvil ? "A" : "*";
+                Box(new Rect(p.x - 6, p.y - 6, 12, 12), new Color(0.1f, 0.1f, 0.1f, 0.85f));
+                Shadow(new Rect(p.x - 6, p.y - 7, 12, 14), letter, shadowed, new Color(1f, 0.9f, 0.45f));
+            }
+            Vector2 spawn;
+            if (MiniPoint(rect, uv, WorldBuilder.StartPosition, out spawn))
+            {
+                Box(new Rect(spawn.x - 4, spawn.y - 4, 8, 8), new Color(0.5f, 0.9f, 1f));
+            }
+            foreach (EnemyProfile enemy in EnemyProfile.All)
+            {
+                if (enemy.Health.IsDead()) continue;
+                Vector2 p;
+                if (!MiniPoint(rect, uv, enemy.transform.position, out p)) continue;
+                Box(new Rect(p.x - 1.5f, p.y - 1.5f, 3, 3), enemy.Info != null && enemy.Info.IsBoss ? new Color(1f, 0.2f, 0.9f) : new Color(1f, 0.25f, 0.2f));
+            }
+            Vector2 me;
+            MiniPoint(rect, uv, player.transform.position, out me);
+            Box(new Rect(me.x - 3, me.y - 3, 6, 6), Color.white);
+
+            string zone = currentZone ?? "";
+            Shadow(new Rect(frame.x, frame.yMax - 19, frame.width, 18), zone, small, new Color(1f, 0.92f, 0.7f));
+        }
+
+        bool MiniPoint(Rect rect, Rect uv, Vector3 world, out Vector2 point)
+        {
+            Vector2 u = MapUv(world);
+            float x = (u.x - uv.x) / uv.width;
+            float y = (u.y - uv.y) / uv.height;
+            point = new Vector2(rect.x + x * rect.width, rect.y + (1f - y) * rect.height);
+            return x >= 0.02f && x <= 0.98f && y >= 0.02f && y <= 0.98f;
+        }
+
+        void DrawWorldMap(float width, float height)
+        {
+            float size = Mathf.Min(width - 80, height - 120);
+            Rect frame = new Rect((width - size) / 2 - 6, 50, size + 12, size + 40);
+            Panel(frame);
+            Rect rect = new Rect(frame.x + 6, frame.y + 30, size, size);
+            Shadow(new Rect(frame.x, frame.y + 6, frame.width, 20), "World map  (M to close)", bold, Color.white);
+            GUI.DrawTexture(rect, mapTexture);
+            Rect all = new Rect(0, 0, 1, 1);
+
+            foreach (ZoneInfo zone in WorldLayout.Zones)
+            {
+                Vector2 p;
+                MiniPoint(rect, all, new Vector3(zone.Center.x, 0, zone.Center.y), out p);
+                Shadow(new Rect(p.x - 110, p.y + 16, 220, 18), zone.Name + "  (" + zone.Levels + ")", bold, new Color(0.85f, 0.95f, 1f));
+            }
+            foreach (TownInfo town in WorldLayout.Towns)
+            {
+                Vector2 p;
+                MiniPoint(rect, all, new Vector3(town.Center.x, 0, town.Center.y), out p);
+                Box(new Rect(p.x - 6, p.y - 6, 12, 12), new Color(0.95f, 0.8f, 0.3f));
+                Shadow(new Rect(p.x - 100, p.y - 26, 200, 20), town.Name, bold, new Color(1f, 0.9f, 0.5f));
+            }
+            if (BossController.Active != null)
+            {
+                Vector2 p;
+                MiniPoint(rect, all, BossController.Active.transform.position, out p);
+                Shadow(new Rect(p.x - 60, p.y - 9, 120, 18), "Old Gullet (boss)", small, new Color(1f, 0.5f, 0.9f));
+            }
+            Vector2 me;
+            MiniPoint(rect, all, player.transform.position, out me);
+            Box(new Rect(me.x - 4, me.y - 4, 8, 8), Color.white);
+            Shadow(new Rect(me.x - 30, me.y + 4, 60, 16), "You", small, Color.white);
+
+            // which way is north on this (camera-aligned) map
+            Vector2 north;
+            MiniPoint(rect, all, new Vector3(0, 0, WorldLayout.Extent * 0.9f), out north);
+            Shadow(new Rect(north.x - 10, north.y - 10, 20, 20), "N", bold, Color.white);
+        }
+
+        // ---------------------------------------------------------------- Station panels
+
+        void DrawStationPanel(Station station, float width, float height)
+        {
+            float panelWidth = 430f;
+            float panelHeight = Mathf.Min(560f, height - 140f);
+            float inventoryWidth = Columns * Cell + 24;
+            Rect rect = new Rect(width - inventoryWidth - 12 - panelWidth - 10, height - panelHeight - 40, panelWidth, panelHeight);
+            Panel(rect);
+
+            string heading = station.Label + (string.IsNullOrEmpty(station.Town) ? "" : "  -  " + station.Town);
+            Shadow(new Rect(rect.x + 12, rect.y + 8, rect.width - 60, 20), heading, bold, new Color(1f, 0.9f, 0.6f));
+            if (GUI.Button(new Rect(rect.xMax - 34, rect.y + 6, 26, 22), "X")) stationUser.Close();
+            Rect body = new Rect(rect.x + 12, rect.y + 34, rect.width - 24, rect.height - 44);
+
+            switch (station.Kind)
+            {
+                case StationKind.Bank: DrawBank(body); break;
+                case StationKind.Shop: DrawShop(station, body); break;
+                default: DrawStationRecipes(station.Kind, body); break;
+            }
+        }
+
+        void DrawBank(Rect area)
+        {
+            BankModel model = bank.Model;
+            GUI.Label(new Rect(area.x, area.y, area.width - 130, 18), "Shared by every bank. Left: take 1   Right: take all", small);
+            if (GUI.Button(new Rect(area.xMax - 124, area.y - 2, 124, 22), "Deposit inventory")) bank.DepositAll();
+
+            int columns = 7;
+            float cell = 56f;
+            Rect scrollArea = new Rect(area.x, area.y + 24, area.width, area.height - 24);
+            int rows = Mathf.Max(1, (model.Count + columns - 1) / columns);
+            Rect view = new Rect(0, 0, columns * cell, rows * cell);
+            stationScroll = GUI.BeginScrollView(scrollArea, stationScroll, view);
+            Event e = Event.current;
+            if (model.Count == 0) GUI.Label(new Rect(0, 4, 300, 20), "Your bank is empty. Click items in your bag to deposit.", label);
+            for (int i = 0; i < model.Count; i++)
+            {
+                ItemStack stack = model.Get(i);
+                Rect c = new Rect((i % columns) * cell, (i / columns) * cell, cell - 4, cell - 4);
+                Box(c, new Color(0.2f, 0.18f, 0.15f, 0.9f));
+                Texture2D icon = ItemIcons.Get(stack.ItemId);
+                if (icon != null) GUI.DrawTexture(new Rect(c.x + 3, c.y + 3, c.width - 6, c.height - 6), icon, ScaleMode.ScaleToFit);
+                Shadow(new Rect(c.x + 2, c.y, c.width, 16), QuantityText(stack.Quantity), small, Color.yellow);
+                if (c.Contains(e.mousePosition))
+                {
+                    ItemInfo info = GameContent.Item(stack.ItemId);
+                    slotTooltip = (info != null ? info.Name : stack.ItemId) + " x" + stack.Quantity.ToString("N0") + "\nLeft-click: withdraw 1    Right-click: withdraw all";
+                    if (e.type == EventType.MouseDown)
+                    {
+                        bank.Withdraw(stack.ItemId, e.button == 0 ? 1 : int.MaxValue);
+                        e.Use();
+                    }
+                }
+            }
+            GUI.EndScrollView();
+        }
+
+        void DrawShop(Station station, Rect area)
+        {
+            ShopInfo shop;
+            if (!GameContent.Shops.TryGetValue(station.ShopId ?? "", out shop)) return;
+            int coins = inventory.Model.Count(ShopLogic.Coins);
+            GUI.Label(new Rect(area.x, area.y, area.width, 18), "You have " + coins.ToString("N0") + " coins.   Click items in your bag to sell them.", small);
+
+            float rowHeight = 40f;
+            Rect scrollArea = new Rect(area.x, area.y + 24, area.width, area.height - 24);
+            Rect view = new Rect(0, 0, area.width - 18, shop.Stock.Count * rowHeight);
+            stationScroll = GUI.BeginScrollView(scrollArea, stationScroll, view);
+            for (int i = 0; i < shop.Stock.Count; i++)
+            {
+                string id = shop.Stock[i];
+                ItemInfo info = GameContent.Item(id);
+                if (info == null) continue;
+                float y = i * rowHeight;
+                int price = GameContent.BuyPrice(id);
+                Texture2D icon = ItemIcons.Get(id);
+                if (icon != null) GUI.DrawTexture(new Rect(0, y + 2, 34, 34), icon, ScaleMode.ScaleToFit);
+                bool affordable = coins >= price;
+                Shadow(new Rect(40, y + 2, view.width - 180, 18), info.Name, bold, affordable ? Color.white : new Color(1f, 0.55f, 0.5f));
+                GUI.Label(new Rect(40, y + 19, view.width - 180, 18), price.ToString("N0") + " coins" + Requirement(info), small);
+                Rect row = new Rect(0, y, view.width - 130, rowHeight);
+                if (row.Contains(Event.current.mousePosition)) slotTooltip = ItemTooltip(info);
+
+                bool oldEnabled = GUI.enabled;
+                GUI.enabled = affordable;
+                int bulk = info.Stackable ? 50 : 5;
+                if (GUI.Button(new Rect(view.width - 124, y + 6, 54, 26), "Buy 1")) Buy(id, 1);
+                if (GUI.Button(new Rect(view.width - 66, y + 6, 64, 26), "Buy " + bulk)) Buy(id, bulk);
+                GUI.enabled = oldEnabled;
+            }
+            GUI.EndScrollView();
+        }
+
+        static string Requirement(ItemInfo info)
+        {
+            if (info.IsEquippable || info.Tool != ToolKind.None) return "   (" + info.RequiredSkill + " " + info.RequiredLevel + ")";
+            if (info.IsEdible) return "   (heals " + info.HealAmount + ")";
+            return "";
+        }
+
+        void Buy(string id, int quantity)
+        {
+            string message;
+            bool ok = ShopLogic.TryBuy(inventory.Model, id, quantity, out message);
+            if (message != null) GameLog.Add(message, ok ? GameLog.Normal : GameLog.Warning);
+            inventory.NotifyChanged();
+        }
+
+        void DrawStationRecipes(StationKind kind, Rect area)
+        {
+            List<Recipe> recipes = RecipesAt(kind);
+            string hint = kind == StationKind.Anvil ? "Needs a hammer in your bag." : kind == StationKind.Fire ? "Food can burn; less often at higher Cooking." : "Coal is needed for steel and up.";
+            if (crafter != null && crafter.Busy) hint = "Making " + crafter.Current.Name + "... (" + crafter.Remaining + " left, click to move to stop)";
+            GUI.Label(new Rect(area.x, area.y, area.width, 18), hint, small);
+
+            float rowHeight = 46f;
+            Rect scrollArea = new Rect(area.x, area.y + 22, area.width, area.height - 22);
+            Rect view = new Rect(0, 0, area.width - 18, recipes.Count * rowHeight);
+            stationScroll = GUI.BeginScrollView(scrollArea, stationScroll, view);
+            for (int i = 0; i < recipes.Count; i++)
+            {
+                Recipe recipe = recipes[i];
+                float y = i * rowHeight;
+                bool hasLevel = skills.GetLevel(recipe.Skill) >= recipe.Level;
+                bool canMake = inventory.CanMake(recipe);
+                Texture2D icon = ItemIcons.Get(recipe.Output.ItemId);
+                if (icon != null) GUI.DrawTexture(new Rect(0, y + 4, 36, 36), icon, ScaleMode.ScaleToFit);
+
+                Color nameColor = canMake ? Color.white : hasLevel ? new Color(0.8f, 0.8f, 0.8f) : new Color(1f, 0.5f, 0.45f);
+                string burn = "";
+                if (!string.IsNullOrEmpty(recipe.BurntItemId) && hasLevel) burn = "  (burn " + Mathf.RoundToInt((float)recipe.BurnChance(skills.GetLevel(recipe.Skill)) * 100f) + "%)";
+                Shadow(new Rect(42, y + 2, view.width - 170, 18), recipe.Name + burn, bold, nameColor);
+                GUI.Label(new Rect(42, y + 20, view.width - 170, 18), recipe.Skill + " " + recipe.Level + "  |  " + recipe.Xp.ToString("0.#") + " xp  |  " + Inputs(recipe), small);
+
+                bool oldEnabled = GUI.enabled;
+                GUI.enabled = canMake;
+                if (GUI.Button(new Rect(view.width - 122, y + 8, 50, 26), "1")) crafter.Make(recipe, 1);
+                if (GUI.Button(new Rect(view.width - 68, y + 8, 66, 26), "All")) crafter.Make(recipe, 28);
+                GUI.enabled = oldEnabled;
+            }
+            GUI.EndScrollView();
+        }
+
         // ---------------------------------------------------------------- Skills
 
         void DrawSkills(float height)
         {
             float rowHeight = 30;
-            Rect rect = new Rect(12, 80, 300, SkillInfo.Count * rowHeight + 60);
+            Rect rect = new Rect(12, 114, 300, SkillInfo.Count * rowHeight + 60);
             Panel(rect);
             GUI.Label(new Rect(rect.x + 12, rect.y + 8, 280, 20), "Skills", bold);
 
@@ -593,10 +1033,12 @@ namespace RPG.UI
                 case Skill.Vitality: return "Trained by all combat. 10 HP per level.";
                 case Skill.Ranged: return "Equip a bow (craft one from logs) and craft arrows.";
                 case Skill.Magic: return "Equip a wand; spark stones come from copper/tin rocks and Gnarls.";
-                case Skill.Woodcutting: return "Click trees. Pine 1, Oak 15, Willow 30.";
-                case Skill.Mining: return "Click rocks. Copper/Tin 1, Iron 15.";
-                case Skill.Smithing: return "Smelt bars and forge gear in the Make tab (I).";
-                case Skill.Crafting: return "Bows and leather armour in the Make tab (I).";
+                case Skill.Woodcutting: return "Click trees with an axe. Pine 1, Oak 15, Willow 30, Maple 45, Yew 60, Ashwood 75.";
+                case Skill.Mining: return "Click rocks with a pickaxe. Copper/Tin 1, Iron 15, Coal 30, Verdite 40, Cobalt 55, Cinderite 70.";
+                case Skill.Smithing: return "Smelt bars at a furnace, then hammer them into gear at an anvil.";
+                case Skill.Crafting: return "Bows, arrows and leather armour in the Make tab (I).";
+                case Skill.Pyro: return "Buy a flint and steel, then click logs in your bag. Same log levels as Woodcutting.";
+                case Skill.Cooking: return "Cook raw meat on any fire (town hearths too). Burns less as you level.";
             }
             return "";
         }

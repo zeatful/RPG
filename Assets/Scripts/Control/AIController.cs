@@ -17,6 +17,15 @@ namespace RPG.Control
         [Range(0, 1)]
         [SerializeField] float patrolSpeedFaction = 0.2f;
 
+        // World enemies: passive ones only fight back after being hit; everyone gives up and walks home
+        // when dragged too far from where they spawned; with no patrol path they wander nearby.
+        bool aggressive = true;
+        float leashDistance = 0f;
+        float wanderRadius = 0f;
+        float wanderTimer;
+        bool returningHome;
+        const float ProvokedSeconds = 12f;
+
         GameObject player;
         Fighter fighter;
         Health health;
@@ -56,9 +65,35 @@ namespace RPG.Control
             chaseDistance = distance;
         }
 
+        public void ConfigureWorld(bool isAggressive, float chase, float leash, float wander)
+        {
+            aggressive = isAggressive;
+            chaseDistance = chase;
+            leashDistance = leash;
+            wanderRadius = wander;
+            wanderTimer = UnityEngine.Random.Range(2f, 8f);
+        }
+
         private void Update()
         {
             if (health.IsDead()) return;
+
+            if (leashDistance > 0)
+            {
+                float fromHome = Vector3.Distance(transform.position, guardLocation);
+                if (fromHome > leashDistance) returningHome = true;
+                if (returningHome)
+                {
+                    if (fromHome < 2f) returningHome = false;
+                    else
+                    {
+                        timeSinceLastSawPlayer = Mathf.Infinity;
+                        mover.StartMoveAction(guardLocation, 0.8f);
+                        UpdateTimers();
+                        return;
+                    }
+                }
+            }
 
             if (InAttackRange() && fighter.CanAttack(player))
             {
@@ -94,6 +129,21 @@ namespace RPG.Control
                     CycleWaypoint();
                 }
                 nextPosition = GetCurrentWayPoint();
+            }
+
+            if (patrolPath == null && wanderRadius > 0)
+            {
+                wanderTimer -= Time.deltaTime;
+                if (wanderTimer > 0) return;
+                wanderTimer = UnityEngine.Random.Range(5f, 12f);
+                Vector2 offset = UnityEngine.Random.insideUnitCircle * wanderRadius;
+                Vector3 spot = guardLocation + new Vector3(offset.x, 0, offset.y);
+                UnityEngine.AI.NavMeshHit hit;
+                if (UnityEngine.AI.NavMesh.SamplePosition(spot, out hit, 2f, UnityEngine.AI.NavMesh.AllAreas))
+                {
+                    mover.StartMoveAction(hit.position, patrolSpeedFaction);
+                }
+                return;
             }
 
             if (timeSinceArrivedAtWaypoint > waypointDwellTime)
@@ -137,6 +187,9 @@ namespace RPG.Control
         private bool InAttackRange()
         {
             float distanceToPlayer = Vector3.Distance(player.transform.position, transform.position);
+            // fight back after being hit, even if passive (but not across the map)
+            if (health.TimeSinceLastDamaged < ProvokedSeconds && distanceToPlayer < Mathf.Max(chaseDistance, 12f)) return true;
+            if (!aggressive) return false;
             return (distanceToPlayer < chaseDistance);
         }
 
