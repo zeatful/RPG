@@ -1,0 +1,7 @@
+Sound effects (all CC0 / public domain, trimmed and loudness-normalised):
+
+- "RPG Sound Pack" by artisticdude, https://opengameart.org/content/rpg-sound-pack
+  swing*, magic, spell, unsheathe, equip_*, coins*, pickup, anvil, smelt, door, ui*, bite*, slime*, giant*, ogre*, shade*, beast*
+- "20 Sword Sound Effects (Attacks and Clashes)" by StarNinjas, https://opengameart.org/content/20-sword-sound-effects-attacks-and-clashes
+  slash*, clash*
+- Synthesised for this project (CC0): chop*, mine*, thud*, hurt*, step*, ignite, eat, bow, levelup, rare, death (a low "bad news" bwomp, made for this project)

@@ -1,44 +1,15 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using RPG.Saving;
+﻿using RPG.Saving;
 using UnityEngine;
 
 namespace RPG.SceneManagement
 {
+    /// <summary>
+    /// Lives on the Saving prefab next to the SavingSystem. Saving is per character now and is driven by
+    /// RPG.Game.GameSession (autosave, Esc menu, F5 quick-save), so S / L no longer save and load:
+    /// those keys are used for WASD movement.
+    /// </summary>
     public class SavingWrapper : MonoBehaviour
     {
-        const string defaultSaveFile = "save";
-
-        private SavingSystem savingSystem;
-
-        private void Start()
-        {
-            savingSystem = GetComponent<SavingSystem>();
-        }
-
-        // Update is called once per frame
-        void Update()
-        {
-            if (Input.GetKeyDown(KeyCode.L))
-            {
-                Load();
-            }
-
-            if (Input.GetKeyDown(KeyCode.S))
-            {
-                Save();
-            }
-        }
-
-        private void Save()
-        {
-            savingSystem.Save(defaultSaveFile);
-        }
-
-        private void Load()
-        {
-            savingSystem.Load(defaultSaveFile);
-        }
+        public SavingSystem System { get { return GetComponent<SavingSystem>(); } }
     }
 }
