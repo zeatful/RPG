@@ -162,8 +162,11 @@ namespace RPG.Content
         };
 
         // Bars needed per anvil item, and how many levels above the tier's smelt level it unlocks.
-        public const int AxeBars = 1, SwordBars = 2, PickaxeBars = 2, PlateBars = 5;
-        public const int AxeOffset = 0, SwordOffset = 2, PickaxeOffset = 4, PlateOffset = 10;
+        public const int AxeBars = 1, SwordBars = 2, HelmBars = 2, PickaxeBars = 2, ShieldBars = 3, LegsBars = 3, PlateBars = 5;
+        public const int AxeOffset = 0, SwordOffset = 2, HelmOffset = 3, PickaxeOffset = 4, ShieldOffset = 6, LegsOffset = 8, PlateOffset = 10;
+
+        // Other armour pieces relative to the platebody of the same tier (defence and price).
+        public const double HelmShare = 0.4, LegsShare = 0.6, ShieldShare = 0.5;
 
         public static readonly Dictionary<string, ItemInfo> Items = BuildItems();
         public static readonly Dictionary<string, EnemyInfo> Enemies = BuildEnemies();
@@ -261,36 +264,46 @@ namespace RPG.Content
                 ItemInfo plate = Armor("platebody_" + key, t + " platebody", t, Skill.Defense, material.Level, tier.PlateDefense);
                 plate.Value = tier.PlateValue;
                 Add(items, plate);
+                Add(items, Piece("helm_" + key, t + " full helm", t, EquipSlot.Head, material.Level, tier, HelmShare));
+                Add(items, Piece("platelegs_" + key, t + " platelegs", t, EquipSlot.Legs, material.Level, tier, LegsShare));
+                Add(items, Piece("kiteshield_" + key, t + " kiteshield", t, EquipSlot.Shield, material.Level, tier, ShieldShare));
 
+                // Axes and pickaxes are wielded in the weapon slot (you must hold one to chop or mine). They
+                // need the gathering level to wield and hit a little, but much worse than a sword.
                 Add(items, new ItemInfo
                 {
                     Id = "axe_" + key, Name = t + " axe", ColorHex = material.ColorHex, Tier = t, Value = tier.AxeValue,
-                    Tool = ToolKind.Axe, ToolPower = tier.ToolPower, RequiredSkill = Skill.Woodcutting, RequiredLevel = material.Level
+                    Tool = ToolKind.Axe, ToolPower = tier.ToolPower, RequiredSkill = Skill.Woodcutting, RequiredLevel = material.Level,
+                    Slot = EquipSlot.Weapon, AttackBonus = tier.SwordAttack / 3, StrengthBonus = tier.SwordStrength / 2
                 });
                 Add(items, new ItemInfo
                 {
                     Id = "pickaxe_" + key, Name = t + " pickaxe", ColorHex = material.ColorHex, Tier = t, Value = tier.PickaxeValue,
-                    Tool = ToolKind.Pickaxe, ToolPower = tier.ToolPower, RequiredSkill = Skill.Mining, RequiredLevel = material.Level
+                    Tool = ToolKind.Pickaxe, ToolPower = tier.ToolPower, RequiredSkill = Skill.Mining, RequiredLevel = material.Level,
+                    Slot = EquipSlot.Weapon, AttackBonus = tier.SwordAttack / 3, StrengthBonus = tier.SwordStrength / 2
                 });
             }
 
             Add(items, new ItemInfo { Id = "alpha_fang", Name = "Alpha Fang", ColorHex = "#E6E6E6", Slot = EquipSlot.Weapon, AttackBonus = 15, StrengthBonus = 12, RequiredSkill = Skill.Attack, RequiredLevel = 10, Rare = true, Value = 900, Description = "A wolf's fang, sharpened into a dagger." });
             Add(items, new ItemInfo { Id = "gullet_hook", Name = "Gullet Hook", ColorHex = "#5F8A7A", Slot = EquipSlot.Weapon, AttackBonus = 16, StrengthBonus = 18, RequiredSkill = Skill.Attack, RequiredLevel = 15, Rare = true, Value = 2500, Description = "Pulled from Old Gullet's jaw. Still smells of river." });
 
-            // Ranged: bows fire arrows (one per shot)
-            Add(items, new ItemInfo { Id = "pine_arrows", Name = "Pine arrows", ColorHex = "#C9A06A", Stackable = true, Value = 3, Description = "Ammo for bows." });
-            Add(items, new ItemInfo { Id = "shortbow_pine", Name = "Pine shortbow", ColorHex = "#A0703A", Slot = EquipSlot.Weapon, Style = CombatStyle.Ranged, AmmoId = "pine_arrows", Range = 7f, AttackBonus = 8, StrengthBonus = 6, RequiredSkill = Skill.Ranged, RequiredLevel = 1, Value = 60 });
-            Add(items, new ItemInfo { Id = "shortbow_oak", Name = "Oak shortbow", ColorHex = "#7A5230", Slot = EquipSlot.Weapon, Style = CombatStyle.Ranged, AmmoId = "pine_arrows", Range = 8f, AttackBonus = 14, StrengthBonus = 10, RequiredSkill = Skill.Ranged, RequiredLevel = 10, Value = 260 });
+            // Ranged: two-handed bows fire arrows from the ammo slot (one per shot, up to 999 equipped)
+            Add(items, new ItemInfo { Id = "pine_arrows", Name = "Pine arrows", ColorHex = "#C9A06A", Stackable = true, Value = 3, Slot = EquipSlot.Ammo, RequiredSkill = Skill.Ranged, Description = "Ammo for bows. Equip them (up to 999) to fire them." });
+            Add(items, new ItemInfo { Id = "shortbow_pine", Name = "Pine shortbow", ColorHex = "#A0703A", Slot = EquipSlot.Weapon, TwoHanded = true, Style = CombatStyle.Ranged, AmmoId = "pine_arrows", Range = 7f, AttackBonus = 8, StrengthBonus = 6, RequiredSkill = Skill.Ranged, RequiredLevel = 1, Value = 60 });
+            Add(items, new ItemInfo { Id = "shortbow_oak", Name = "Oak shortbow", ColorHex = "#7A5230", Slot = EquipSlot.Weapon, TwoHanded = true, Style = CombatStyle.Ranged, AmmoId = "pine_arrows", Range = 8f, AttackBonus = 14, StrengthBonus = 10, RequiredSkill = Skill.Ranged, RequiredLevel = 10, Value = 260 });
 
-            // Magic: wands burn spark stones (one per cast)
-            Add(items, new ItemInfo { Id = "spark_stone", Name = "Spark stone", ColorHex = "#FFB347", Stackable = true, Value = 4, Description = "Crackles when held. Wands burn one per cast." });
-            Add(items, new ItemInfo { Id = "wand_pine", Name = "Pine wand", ColorHex = "#E0A060", Slot = EquipSlot.Weapon, Style = CombatStyle.Magic, AmmoId = "spark_stone", Range = 6f, AttackBonus = 9, StrengthBonus = 8, RequiredSkill = Skill.Magic, RequiredLevel = 1, Value = 70 });
-            Add(items, new ItemInfo { Id = "wand_oak", Name = "Oak wand", ColorHex = "#C07A3A", Slot = EquipSlot.Weapon, Style = CombatStyle.Magic, AmmoId = "spark_stone", Range = 7f, AttackBonus = 15, StrengthBonus = 13, RequiredSkill = Skill.Magic, RequiredLevel = 10, Value = 300 });
+            // Magic: two-handed staves burn spark stones from the bag (one per cast)
+            Add(items, new ItemInfo { Id = "spark_stone", Name = "Spark stone", ColorHex = "#FFB347", Stackable = true, Value = 4, Description = "Crackles when held. Staves burn one per cast." });
+            Add(items, new ItemInfo { Id = "staff_pine", Name = "Pine staff", ColorHex = "#E0A060", Slot = EquipSlot.Weapon, TwoHanded = true, Style = CombatStyle.Magic, AmmoId = "spark_stone", Range = 6f, AttackBonus = 9, StrengthBonus = 8, RequiredSkill = Skill.Magic, RequiredLevel = 1, Value = 70 });
+            Add(items, new ItemInfo { Id = "staff_oak", Name = "Oak staff", ColorHex = "#C07A3A", Slot = EquipSlot.Weapon, TwoHanded = true, Style = CombatStyle.Magic, AmmoId = "spark_stone", Range = 7f, AttackBonus = 15, StrengthBonus = 13, RequiredSkill = Skill.Magic, RequiredLevel = 10, Value = 300 });
 
             // Pets
             Add(items, new ItemInfo { Id = "pet_gullet", Name = "Little Gullet", ColorHex = "#4A6B5A", Rare = true, IsPet = true, Description = "A tiny river brute. Left-click to summon or dismiss." });
 
-            // Leather armour
+            // Leather armour and a wooden shield: cheap starter gear made from hides and logs
+            Add(items, new ItemInfo { Id = "leather_cowl", Name = "Leather cowl", ColorHex = "#9C6B3F", Slot = EquipSlot.Head, DefenseBonus = 3, RequiredSkill = Skill.Defense, RequiredLevel = 1, Value = 25 });
+            Add(items, new ItemInfo { Id = "leather_chaps", Name = "Leather chaps", ColorHex = "#8A5A35", Slot = EquipSlot.Legs, DefenseBonus = 5, RequiredSkill = Skill.Defense, RequiredLevel = 1, Value = 40 });
+            Add(items, new ItemInfo { Id = "shield_wood", Name = "Wooden shield", ColorHex = "#8A6038", Slot = EquipSlot.Shield, DefenseBonus = 5, RequiredSkill = Skill.Defense, RequiredLevel = 1, Value = 30, Description = "Lets you fight in the Defense (shield bash) style." });
             Add(items, new ItemInfo { Id = "leather_body", Name = "Leather body", ColorHex = "#9C6B3F", Slot = EquipSlot.Body, DefenseBonus = 8, RequiredSkill = Skill.Defense, RequiredLevel = 1, Value = 60 });
             Add(items, new ItemInfo { Id = "hard_leather_body", Name = "Hardened leather body", ColorHex = "#6F4A2A", Slot = EquipSlot.Body, DefenseBonus = 14, RequiredSkill = Skill.Defense, RequiredLevel = 10, Value = 180 });
             Add(items, new ItemInfo { Id = "wolfhide_body", Name = "Wolfhide body", ColorHex = "#7D7F86", Slot = EquipSlot.Body, DefenseBonus = 20, AttackBonus = 2, RequiredSkill = Skill.Defense, RequiredLevel = 20, Value = 600 });
@@ -325,6 +338,14 @@ namespace RPG.Content
                 Slot = EquipSlot.Body, DefenseBonus = defense,
                 RequiredSkill = skill, RequiredLevel = level
             };
+        }
+
+        static ItemInfo Piece(string id, string name, string tier, EquipSlot slot, int level, SmithTier smith, double share)
+        {
+            ItemInfo info = Armor(id, name, tier, Skill.Defense, level, (int)Math.Round(smith.PlateDefense * share));
+            info.Slot = slot;
+            info.Value = (int)Math.Round(smith.PlateValue * share / 10.0) * 10;
+            return info;
         }
 
         static void Add(Dictionary<string, ItemInfo> items, ItemInfo info)
@@ -568,7 +589,10 @@ namespace RPG.Content
                 string key = t.ToLower();
                 recipes.Add(Anvil("forge_axe_" + key, "Smith " + t + " axe", tier, AxeOffset, AxeBars, "axe_" + key));
                 recipes.Add(Anvil("forge_sword_" + key, "Smith " + t + " sword", tier, SwordOffset, SwordBars, "sword_" + key));
+                recipes.Add(Anvil("forge_helm_" + key, "Smith " + t + " full helm", tier, HelmOffset, HelmBars, "helm_" + key));
                 recipes.Add(Anvil("forge_pickaxe_" + key, "Smith " + t + " pickaxe", tier, PickaxeOffset, PickaxeBars, "pickaxe_" + key));
+                recipes.Add(Anvil("forge_shield_" + key, "Smith " + t + " kiteshield", tier, ShieldOffset, ShieldBars, "kiteshield_" + key));
+                recipes.Add(Anvil("forge_legs_" + key, "Smith " + t + " platelegs", tier, LegsOffset, LegsBars, "platelegs_" + key));
                 recipes.Add(Anvil("forge_plate_" + key, "Smith " + t + " platebody", tier, PlateOffset, PlateBars, "platebody_" + key));
             }
 
@@ -584,8 +608,11 @@ namespace RPG.Content
 
             // Crafting: anywhere
             recipes.Add(MakeRecipe("craft_arrows_pine", "Craft 15 Pine arrows", Skill.Crafting, 1, 5, "pine_arrows", 15, "logs_pine", 1));
-            recipes.Add(MakeRecipe("craft_wand_pine", "Craft Pine wand", Skill.Crafting, 3, 10, "wand_pine", 1, "logs_pine", 1, "spark_stone", 1));
-            recipes.Add(MakeRecipe("craft_wand_oak", "Craft Oak wand", Skill.Crafting, 12, 25, "wand_oak", 1, "logs_oak", 1, "spark_stone", 5));
+            recipes.Add(MakeRecipe("craft_staff_pine", "Craft Pine staff", Skill.Crafting, 3, 10, "staff_pine", 1, "logs_pine", 2, "spark_stone", 1));
+            recipes.Add(MakeRecipe("craft_staff_oak", "Craft Oak staff", Skill.Crafting, 12, 25, "staff_oak", 1, "logs_oak", 2, "spark_stone", 5));
+            recipes.Add(MakeRecipe("craft_shield_wood", "Craft Wooden shield", Skill.Crafting, 1, 12, "shield_wood", 1, "logs_pine", 3));
+            recipes.Add(MakeRecipe("craft_leather_cowl", "Craft Leather cowl", Skill.Crafting, 1, 10, "leather_cowl", 1, "hide", 1));
+            recipes.Add(MakeRecipe("craft_leather_chaps", "Craft Leather chaps", Skill.Crafting, 4, 14, "leather_chaps", 1, "hide", 1));
             recipes.Add(MakeRecipe("craft_bow_pine", "Craft Pine shortbow", Skill.Crafting, 1, 5, "shortbow_pine", 1, "logs_pine", 1));
             recipes.Add(MakeRecipe("craft_leather_body", "Craft Leather body", Skill.Crafting, 1, 14, "leather_body", 1, "hide", 1));
             recipes.Add(MakeRecipe("craft_bow_oak", "Craft Oak shortbow", Skill.Crafting, 10, 17, "shortbow_oak", 1, "logs_oak", 1));
@@ -618,13 +645,14 @@ namespace RPG.Content
             Dictionary<string, ShopInfo> shops = new Dictionary<string, ShopInfo>();
             shops["brookhollow"] = Shop("brookhollow", "Brookhollow General Store",
                 "cheese", "bread", FlintId, HammerId, "axe_bronze", "pickaxe_bronze", "pine_arrows", "spark_stone",
-                "shortbow_pine", "wand_pine", "sword_bronze", "leather_body", "platebody_bronze");
+                "shortbow_pine", "staff_pine", "sword_bronze", "shield_wood", "leather_cowl", "leather_body", "leather_chaps",
+                "helm_bronze", "kiteshield_bronze", "platelegs_bronze", "platebody_bronze");
             shops["ironmere"] = Shop("ironmere", "Ironmere Supplies",
                 "cheese", "bread", FlintId, HammerId, "axe_bronze", "pickaxe_bronze", "axe_iron", "pickaxe_iron", "pine_arrows", "spark_stone",
-                "shortbow_oak", "sword_iron", "hard_leather_body", "platebody_iron");
+                "shortbow_oak", "sword_iron", "hard_leather_body", "helm_iron", "kiteshield_iron", "platelegs_iron", "platebody_iron");
             shops["emberfall"] = Shop("emberfall", "Emberfall Outfitters",
                 "bread", "meat_pie", FlintId, HammerId, "axe_iron", "pickaxe_iron", "axe_steel", "pickaxe_steel", "pine_arrows", "spark_stone",
-                "wand_oak", "sword_steel", "platebody_steel");
+                "staff_oak", "sword_steel", "helm_steel", "kiteshield_steel", "platelegs_steel", "platebody_steel");
             return shops;
         }
 

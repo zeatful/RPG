@@ -6,6 +6,12 @@ namespace RPG.Core
     {
         // Set by the HUD every GUI pass; world clicks are ignored while the mouse is over a panel.
         public static bool PointerOverUi;
+
+        // A full-screen menu (Esc menu, character screen) is open: no world clicks, movement or camera keys.
+        public static bool Blocked;
+
+        // A text field has focus: don't treat typing as hotkeys.
+        public static bool Typing;
     }
 
     public static class RpgUtil

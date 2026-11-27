@@ -63,6 +63,7 @@ namespace RPG.World
             logId = logs;
             timer = AttemptInterval * 0.5f;
             GameLog.Add("You strike the flint over the " + Name(logs) + "...");
+            Sfx.At("clash", transform.position, 0.25f, 0.2f);
             return true;
         }
 
@@ -89,6 +90,7 @@ namespace RPG.World
             Campfire.Create(transform.position, burn.BurnSeconds, info != null ? info.ColorHex : null, null);
             skills.AddXp(Skill.Pyro, burn.Xp);
             GameLog.Add("The fire catches and the " + Name(logId) + " begin to burn.");
+            Sfx.At("ignite", transform.position, 0.9f);
             Stop();
             StepAside();
         }

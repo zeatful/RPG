@@ -63,12 +63,17 @@ namespace RPG.Game
                 gameObject.AddComponent<DayNightCycle>();
                 SpawnNodes(player.transform.position, lair);
             }
+            gameObject.AddComponent<RPG.World.InteriorDirector>();
+            gameObject.AddComponent<PlayerPortrait>();
             gameObject.AddComponent<RpgHud>();
+            gameObject.AddComponent<GameMenu>();
+            gameObject.AddComponent<SoundDirector>();
+            gameObject.AddComponent<GameSession>();
 
             GameLog.Clear();
-            GameLog.Add("Welcome to Brookhollow! Click trees and rocks to gather, enemies to fight, loot to pick it up.");
-            GameLog.Add("Bank chests, shops, furnaces and anvils are in every town square. Click them to use them.");
-            GameLog.Add("I = inventory, K = skills, M = world map, S / L = save / load.");
+            GameLog.Add("Click or use WASD to move; arrow keys turn the camera. Click trees and rocks to gather, monsters to fight.");
+            GameLog.Add("Bank chests, shops, furnaces and anvils are in every town square, and you can walk into the houses.");
+            GameLog.Add("I = bag, E = equipment, K = skills, M = map, 1/2/3 = combat style, Esc = menu.");
 
             if (SmokeTest.Requested) gameObject.AddComponent<SmokeTest>();
             if (Showcase.RequestedDir != null) gameObject.AddComponent<Showcase>();
@@ -100,10 +105,22 @@ namespace RPG.Game
             Ensure<RPG.World.StationUser>(player);
             Ensure<RPG.World.Crafter>(player);
             Ensure<RPG.World.Firemaker>(player);
+            Ensure<CharacterAppearance>(player);
+
+            // the player's own animator: a different swing for slash, crush, shield bash, bow, staff, chop and mine
+            RpgArt art = RpgArt.Instance;
+            Animator animator = player.GetComponent<Animator>();
+            if (art != null && art.PlayerController != null && animator != null)
+            {
+                animator.runtimeAnimatorController = art.PlayerController;
+                RPG.Combat.Fighter fighter = player.GetComponent<RPG.Combat.Fighter>();
+                if (fighter != null) fighter.RefreshAnimatorParams();
+            }
 
             if (inventory.IsEmpty())
             {
-                // starter kit: enough to chop, mine and smith; buy a flint and steel to make fires
+                // starter kit: plain clothes (no armour) and enough to chop, mine and smith; wield the axe or
+                // pickaxe to gather; buy a flint and steel to make fires
                 inventory.Model.SetEquipped("sword_bronze", null);
                 inventory.TryAdd("axe_bronze", 1);
                 inventory.TryAdd("pickaxe_bronze", 1);

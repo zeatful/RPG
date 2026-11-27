@@ -9,6 +9,7 @@ using RPG.Gathering;
 using RPG.Items;
 using RPG.Saving;
 using RPG.Stats;
+using RPG.UI;
 using RPG.World;
 using UnityEngine;
 using UnityEngine.AI;
@@ -80,9 +81,10 @@ namespace RPG.Game
             string recordDir = ArgValue("-rpgRecord");
             string[] titles =
             {
-                "Check the world spawned", "Buy flint and steel at the store", "Chop a pine tree, fletch arrows",
-                "Light a fire, cook meat", "Mine copper and tin", "Smelt a bar, smith an axe", "Bank: deposit and withdraw",
-                "Kill an enemy, pick up loot", "Die, respawn, recover items", "Survive Old Gullet's slam", "Save, change, load"
+                "Check the world spawned", "Make a character (name, looks)", "Buy flint and steel at the store", "Equip armour, shield, bow, arrows",
+                "Chop a pine (axe must be wielded)", "Light a fire, cook meat", "Mine copper and tin", "Smelt a bar, smith an axe",
+                "Bank: deposit and withdraw", "Walk with WASD, go into a house", "Kill an enemy in Crush style", "Die, respawn, recover items",
+                "Survive Old Gullet's slam", "Esc menu, save, change, load"
             };
             foreach (string title in titles)
             {
@@ -99,17 +101,22 @@ namespace RPG.Game
             if (player != null) player.GetComponent<Health>().SetMaxHealth(100000, true);
 
             yield return Step(0, "setup", CheckSetup());
-            yield return Step(1, "shop", TestShop());
-            yield return Step(2, "gathering", TestGathering());
-            yield return Step(3, "fire and cooking", TestFireAndCooking());
-            yield return Step(4, "mining", TestMining());
-            yield return Step(5, "smithing", TestSmithing());
-            yield return Step(6, "bank", TestBank());
-            yield return Step(7, "combat and loot", TestCombat());
-            yield return Step(8, "death", TestDeath());
-            yield return Step(9, "boss", TestBoss());
-            yield return Step(10, "save and load", TestSaveLoad());
+            yield return Step(1, "character", TestCharacter());
+            yield return Step(2, "shop", TestShop());
+            yield return Step(3, "equipment", TestEquipment());
+            yield return Step(4, "gathering", TestGathering());
+            yield return Step(5, "fire and cooking", TestFireAndCooking());
+            yield return Step(6, "mining", TestMining());
+            yield return Step(7, "smithing", TestSmithing());
+            yield return Step(8, "bank", TestBank());
+            yield return Step(9, "keyboard and houses", TestKeyboardAndHouse());
+            yield return Step(10, "combat and loot", TestCombat());
+            yield return Step(11, "death", TestDeath());
+            yield return Step(12, "boss", TestBoss());
+            yield return Step(13, "menu, save and load", TestSaveLoad());
 
+            Log("sound effects played: " + Sfx.PlayedCount);
+            Check(Sfx.PlayedCount >= 20, "only " + Sfx.PlayedCount + " sound effects played");
             foreach (string error in errors) failures.Add("logged " + error);
             Time.timeScale = 1f;
             current = null;
@@ -252,12 +259,137 @@ namespace RPG.Game
                 }
             }
             Check(Inventory().Model.Count("axe_bronze") == 1 && Inventory().Model.Count("hammer") == 1 && Inventory().Model.Count("coins") == 25, "starter kit missing");
+            InventoryModel kit = Inventory().Model;
+            Check(kit.WeaponId == "sword_bronze" && kit.HeadId == null && kit.BodyId == null && kit.LegsId == null && kit.ShieldId == null, "new characters wield a bronze sword and wear no armour");
+            Check(GameSession.Instance != null && GameSession.Instance.Playing && GameSession.Instance.Ephemeral, "tests skip the character screen and never save");
+            Check(Interiors.All.Count >= 15, "expected 15+ enterable buildings, found " + Interiors.All.Count);
+            Log("rooms: " + Interiors.All.Count);
+            foreach (string sound in new[] { "slash", "clash", "thud", "swing", "chop", "mine", "eat", "levelup", "door", "coins", "bow", "magic" })
+            {
+                Check(Sfx.Has(sound), "sound effect missing: " + sound);
+            }
+            Animator animator = player.GetComponent<Animator>();
+            bool hasKind = false;
+            foreach (AnimatorControllerParameter parameter in animator.parameters) if (parameter.name == "attackKind") hasKind = true;
+            Check(hasKind, "player animator has no per-style attack animations");
+            int body = BodyParts();
+            Check(body >= 30, "the character body wasn't built (" + body + " parts)");
+            foreach (SkinnedMeshRenderer skinned in player.GetComponentsInChildren<SkinnedMeshRenderer>()) Check(!skinned.enabled, "the old soldier mesh is still showing");
             float fromStart = RpgUtil.FlatDistance(WorldBuilder.BossLairPosition, player.transform.position);
             Check(fromStart > 100f, "boss lair is only " + fromStart + " m from the start");
             yield break;
         }
 
         Inventory Inventory() { return player.GetComponent<Inventory>(); }
+
+        int BodyParts()
+        {
+            int count = 0;
+            foreach (Renderer renderer in player.GetComponentsInChildren<Renderer>())
+            {
+                if (renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.gameObject.layer == CharacterAppearance.PlayerLayer) count++;
+            }
+            return count;
+        }
+
+        IEnumerator TestCharacter()
+        {
+            // names: unique (ignoring case and spaces), using a scratch folder so real characters are untouched
+            string folder = System.IO.Path.Combine(Application.temporaryCachePath, "smoke_characters");
+            if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true);
+            CharacterStore.Folder = folder;
+            Check(CharacterStore.Validate("Tester") == null, "a fresh name should be free");
+            CharacterMeta meta = CharacterStore.Create("Tester", new AppearanceData());
+            Check(CharacterStore.Validate("tester") != null && CharacterStore.Validate("TES TER") != null, "a taken name must be rejected");
+            Check(CharacterStore.List().Count == 1, "character list should have the new character");
+            CharacterStore.Delete(meta);
+            Check(CharacterStore.List().Count == 0 && CharacterStore.Validate("Tester") == null, "deleting frees the name");
+            CharacterStore.Folder = null;
+
+            // looks: change skin, hair, clothes and style on the real model
+            CharacterAppearance look = player.GetComponent<CharacterAppearance>();
+            Say("Dressing the character: new skin, hair, shirt and trousers...");
+            AppearanceData data = new AppearanceData { Name = "Tester", Skin = 3, Hair = 5, HairStyle = 1, Shirt = 2, Trousers = 3 };
+            look.SetAppearance(data);
+            yield return null;
+            Color shirt = CharacterAppearance.Pick(CharacterAppearance.ShirtColors, 2);
+            Color hair = CharacterAppearance.Pick(CharacterAppearance.HairColors, 5);
+            bool shirtShown = false, hairShown = false;
+            foreach (Renderer renderer in player.GetComponentsInChildren<Renderer>())
+            {
+                if (!renderer.enabled || renderer.gameObject.layer != CharacterAppearance.PlayerLayer) continue;
+                Color color = renderer.sharedMaterial.color;
+                if (Similar(color, shirt)) shirtShown = true;
+                if (Similar(color, hair)) hairShown = true;
+            }
+            Check(shirtShown && hairShown, "chosen shirt/hair colours aren't on the model");
+            Check(look.Data.Name == "Tester", "appearance keeps the name");
+            if (watch)
+            {
+                FollowCamera.Instance.CloseUp = true;
+                for (int i = 0; i < 4; i++)
+                {
+                    look.SetAppearance(new AppearanceData { Name = "Tester", Skin = i, Hair = i + 1, HairStyle = i, Shirt = i + 3, Trousers = i });
+                    yield return new WaitForSeconds(1.2f);
+                }
+                look.SetAppearance(data);
+                FollowCamera.Instance.CloseUp = false;
+            }
+        }
+
+        static bool Similar(Color a, Color b)
+        {
+            return Mathf.Abs(a.r - b.r) < 0.01f && Mathf.Abs(a.g - b.g) < 0.01f && Mathf.Abs(a.b - b.b) < 0.01f;
+        }
+
+        int SlotOfItem(string id)
+        {
+            for (int i = 0; i < InventoryModel.SlotCount; i++) if (Inventory().Model.GetSlot(i).ItemId == id) return i;
+            return -1;
+        }
+
+        bool EquipFromBag(string id)
+        {
+            int slot = SlotOfItem(id);
+            if (slot < 0) return false;
+            Inventory().UseSlot(slot);
+            return true;
+        }
+
+        IEnumerator TestEquipment()
+        {
+            InventoryModel model = Inventory().Model;
+            PlayerStats stats = player.GetComponent<PlayerStats>();
+            Say("The test hands over a bronze helm, platelegs, a wooden shield, a pine bow and 1200 arrows...");
+            foreach (string id in new[] { "helm_bronze", "platelegs_bronze", "shield_wood", "shortbow_pine" }) Inventory().TryAdd(id, 1);
+            Inventory().TryAdd("pine_arrows", 1200);
+            Skills().AddXp(Skill.Defense, ExperienceTable.XpForLevel(5));
+            int bare = BodyParts();
+
+            Check(!stats.SetStance(MeleeStance.Bash), "shield bash shouldn't work without a shield");
+            foreach (string id in new[] { "helm_bronze", "platelegs_bronze", "shield_wood" })
+            {
+                Check(EquipFromBag(id), "couldn't find " + id + " to equip");
+                if (watch) yield return new WaitForSeconds(0.8f);
+            }
+            yield return null;
+            Check(model.HeadId == "helm_bronze" && model.LegsId == "platelegs_bronze" && model.ShieldId == "shield_wood", "helm, legs and shield not worn");
+            int dressed = BodyParts();
+            Check(dressed > bare + 8, "armour and shield don't show on the character (" + bare + " -> " + dressed + " parts)");
+            Check(stats.SetStance(MeleeStance.Bash) && stats.Stance == MeleeStance.Bash && stats.Animation == AttackAnimation.Bash, "shield bash with a shield");
+
+            Say("Switching to the two-handed bow: the shield comes off. Equipping 999 arrows...");
+            Check(EquipFromBag("shortbow_pine") && model.WeaponId == "shortbow_pine" && model.ShieldId == null, "bow should take the shield off");
+            Check(stats.Stance == MeleeStance.Slash, "no shield: bash falls back to slash");
+            Check(EquipFromBag("pine_arrows") && model.AmmoCount == InventoryModel.AmmoCap && model.Count("pine_arrows") == 1200 - InventoryModel.AmmoCap, "arrows: 999 equipped, the rest in the bag");
+            Check(stats.Style == CombatStyle.Ranged && stats.Animation == AttackAnimation.Shoot, "bow uses the ranged style and bow animation");
+            if (watch) yield return new WaitForSeconds(1.5f);
+
+            Say("Back to sword and shield...");
+            Check(EquipFromBag("sword_bronze") && EquipFromBag("shield_wood") && model.WeaponId == "sword_bronze" && model.ShieldId == "shield_wood", "sword and shield back on");
+            Check(model.AmmoCount == InventoryModel.AmmoCap, "arrows stay equipped");
+            if (watch) yield return new WaitForSeconds(1.5f);
+        }
         SkillSet Skills() { return player.GetComponent<SkillSet>(); }
 
         Station FindStation(StationKind kind, string town)
@@ -347,7 +479,12 @@ namespace RPG.Game
             SkillSet skills = player.GetComponent<SkillSet>();
             string logId = tree.Info.ItemId;
             int logsBefore = inventory.Model.Count(logId);
-            Say("Walking to a pine tree to chop it...");
+            Say("Trying to chop with the axe still in the bag (shouldn't work)...");
+            player.GetComponent<Gatherer>().Gather(tree);
+            Check(!player.GetComponent<Gatherer>().IsGathering, "chopping started without wielding an axe");
+            Check(EquipFromBag("axe_bronze") && inventory.Model.WeaponId == "axe_bronze", "couldn't wield the axe");
+            Say("Axe wielded. Walking to a pine tree to chop it...");
+            if (watch) yield return new WaitForSeconds(1f);
             if (!watch) yield return GoNear(tree.transform.position, 1.8f);
             player.GetComponent<Gatherer>().Gather(tree);
 
@@ -468,7 +605,8 @@ namespace RPG.Game
 
         IEnumerator TestMining()
         {
-            Say("Walking to the Brookhollow mine for copper...");
+            Check(EquipFromBag("pickaxe_bronze") && Inventory().Model.WeaponId == "pickaxe_bronze", "couldn't wield the pickaxe");
+            Say("Pickaxe wielded. Walking to the Brookhollow mine for copper...");
             yield return GatherOne("copper");
             Say("Now some tin...");
             yield return GatherOne("tin");
@@ -519,12 +657,13 @@ namespace RPG.Game
             Check(bank.Model.Amount("axe_bronze") == axes && bank.Model.Amount("coins") == coins, "bank didn't receive the items");
             if (watch) yield return new WaitForSeconds(2f);
             Say("Taking the tools, food and coins back out...");
-            foreach (string id in new[] { "axe_bronze", "pickaxe_bronze", "hammer", GameContent.FlintId, "coins", "cooked_meat", "bread", "pine_arrows" })
+            foreach (string id in new[] { "axe_bronze", "sword_bronze", "hammer", GameContent.FlintId, "coins", "cooked_meat", "bread", "pine_arrows", "shortbow_pine" })
             {
                 bank.Withdraw(id, id == "axe_bronze" ? 1 : int.MaxValue);
             }
-            Check(model.Count("pickaxe_bronze") == 1 && model.Count("coins") == coins && model.Count("axe_bronze") == 1, "withdraw didn't return the items");
+            Check(model.Count("sword_bronze") == 1 && model.Count("coins") == coins && model.Count("axe_bronze") == 1, "withdraw didn't return the items");
             Check(bank.Model.Amount("axe_bronze") == axes - 1, "spare axe should stay in the bank");
+            Check(model.WeaponId == "pickaxe_bronze" && model.HeadId == "helm_bronze", "worn gear stays on when depositing the bag");
             if (watch) yield return new WaitForSeconds(1.5f);
             player.GetComponent<StationUser>().Close();
         }
@@ -551,6 +690,10 @@ namespace RPG.Game
             Health playerHealth = player.GetComponent<Health>();
             playerHealth.SetMaxHealth(100000, true);
             SkillSet skills = player.GetComponent<SkillSet>();
+            Check(EquipFromBag("sword_bronze") && Inventory().Model.WeaponId == "sword_bronze", "couldn't wield the sword again");
+            PlayerStats stats = player.GetComponent<PlayerStats>();
+            Check(stats.SetStance(MeleeStance.Crush) && stats.Animation == AttackAnimation.Crush, "couldn't pick the Crush style");
+            double attackXp = skills.GetXp(Skill.Attack), strengthXp = skills.GetXp(Skill.Strength);
             int hits = 0;
             int enemySwings = 0;
             GameObject enemyObject = target.gameObject;
@@ -576,7 +719,8 @@ namespace RPG.Game
             Check(enemySwings > 0, target.Info.Name + " never attacked back (hidden puppet animator not firing Hit events?)");
             Log(target.Info.Name + " swung " + enemySwings + " times, player " + hits);
             Check(target.Health.IsDead(), target.Info.Name + " did not die within the time limit (" + hits + " swings)");
-            Check(skills.GetXp(Skill.Attack) > 0 && skills.GetXp(Skill.Strength) > 0, "no attack/strength xp from combat");
+            Check(skills.GetXp(Skill.Strength) > strengthXp, "no Strength xp from fighting in the Crush style");
+            Check(skills.GetXp(Skill.Attack) == attackXp, "Crush style shouldn't train Attack");
             if (!target.Health.IsDead()) yield break;
 
             yield return new WaitForSeconds(0.5f);
@@ -599,18 +743,29 @@ namespace RPG.Game
         {
             Health health = player.GetComponent<Health>();
             InventoryModel model = Inventory().Model;
-            int carried = InventoryModel.SlotCount - model.FreeSlots() + (model.WeaponId != null ? 1 : 0) + (model.BodyId != null ? 1 : 0);
+            int carried = InventoryModel.SlotCount - model.FreeSlots() + WornCount(model);
+            List<string> before = new List<string>();
+            for (int i = 0; i < InventoryModel.SlotCount; i++) if (!model.GetSlot(i).IsEmpty) before.Add(i + ":" + model.GetSlot(i).ItemId + "x" + model.GetSlot(i).Quantity);
+            foreach (EquipSlot slot in InventoryModel.WornSlots) if (model.Worn(slot) != null) before.Add(slot + ":" + model.Worn(slot));
+            if (model.AmmoCount > 0) before.Add("Ammo:" + model.AmmoId + "x" + model.AmmoCount);
+            Log("carrying " + string.Join(", ", before.ToArray()));
             Vector3 deathSpot = player.transform.position;
-            int pickupsBefore = FindObjectsByType<Pickup>(FindObjectsSortMode.None).Length;
+            HashSet<Pickup> pickupsBefore = new HashSet<Pickup>(FindObjectsByType<Pickup>(FindObjectsSortMode.None));
             Say("Dropping dead on purpose (test) to check the death rules...");
             if (watch) yield return new WaitForSeconds(1f);
             health.TakeDamage(10000000f, null);
             yield return null;
-            int keptKinds = InventoryModel.SlotCount - model.FreeSlots() + (model.WeaponId != null ? 1 : 0) + (model.BodyId != null ? 1 : 0);
-            int dropped = FindObjectsByType<Pickup>(FindObjectsSortMode.None).Length - pickupsBefore;
+            int keptKinds = InventoryModel.SlotCount - model.FreeSlots() + WornCount(model);
+            // count only the piles that appeared at death (older loot piles may come and go meanwhile)
+            int dropped = 0;
+            foreach (Pickup pickup in FindObjectsByType<Pickup>(FindObjectsSortMode.None)) if (!pickupsBefore.Contains(pickup)) dropped++;
             Check(keptKinds <= 1, "kept " + keptKinds + " items on death, expected just the most valuable");
             Check(dropped == carried - keptKinds, "dropped " + dropped + " piles, expected " + (carried - keptKinds));
             Log("died carrying " + carried + " items, kept " + keptKinds + ", dropped " + dropped);
+            if (dropped != carried - keptKinds)
+            {
+                foreach (Pickup pickup in FindObjectsByType<Pickup>(FindObjectsSortMode.None)) Log("  pile: " + pickup.Label + " at " + RpgUtil.FlatDistance(pickup.transform.position, deathSpot).ToString("0.0") + " m");
+            }
 
             float timeout = Time.time + 15f;
             while (Time.time < timeout && health.IsDead()) yield return null;
@@ -639,7 +794,84 @@ namespace RPG.Game
             int left = 0;
             foreach (Pickup pickup in FindObjectsByType<Pickup>(FindObjectsSortMode.None)) if (RpgUtil.FlatDistance(pickup.transform.position, deathSpot) <= 4f) left++;
             Check(left == 0, left + " dropped items couldn't be picked back up");
-            Check(model.Count("pickaxe_bronze") == 1 && model.Count("hammer") == 1, "tools recovered after death");
+            Check(model.Count("pickaxe_bronze") + (model.WeaponId == "pickaxe_bronze" ? 1 : 0) >= 1 && model.Count("hammer") == 1, "tools recovered after death");
+        }
+
+        static int WornCount(InventoryModel model)
+        {
+            int count = model.AmmoCount > 0 ? 1 : 0;
+            foreach (EquipSlot slot in InventoryModel.WornSlots) if (model.Worn(slot) != null) count++;
+            return count;
+        }
+
+        IEnumerator TestKeyboardAndHouse()
+        {
+            RPG.Movement.Mover mover = player.GetComponent<RPG.Movement.Mover>();
+            Vector3 before = player.transform.position;
+            Say("Walking with the keyboard (W = away from the camera)...");
+            float until = Time.time + 1.5f;
+            while (Time.time < until)
+            {
+                mover.DirectMove(FollowCamera.Instance.FlatForward);
+                yield return null;
+            }
+            float moved = RpgUtil.FlatDistance(before, player.transform.position);
+            Check(moved > 2f, "WASD movement only moved " + moved + " m");
+            float yaw = FollowCamera.Instance.Yaw;
+            FollowCamera.Instance.SetYaw(yaw + 90f);
+            yield return null;
+            Check(Vector3.Dot(FollowCamera.Instance.FlatForward, Quaternion.Euler(0, yaw, 0) * Vector3.forward) < 0.1f, "camera didn't turn");
+            if (watch) yield return new WaitForSeconds(1f);
+            FollowCamera.Instance.SetYaw(yaw);
+
+            Station door = null;
+            foreach (Station station in Station.All)
+            {
+                if (station.Kind != StationKind.Door || station.Town != "Brookhollow") continue;
+                Doorway doorway = station.GetComponent<Doorway>();
+                if (doorway == null || doorway.IsExit || doorway.Target.Kind != "home") continue;
+                if (door == null || RpgUtil.FlatDistance(station.transform.position, player.transform.position) < RpgUtil.FlatDistance(door.transform.position, player.transform.position)) door = station;
+            }
+            Check(door != null, "no house door in Brookhollow");
+            if (door == null) yield break;
+            Say("Going into " + door.Label + "...");
+            StationUser user = player.GetComponent<StationUser>();
+            if (!watch) player.GetComponent<NavMeshAgent>().Warp(PointNear(door.ApproachPoint(player.transform.position), 0f));
+            user.Use(door);
+            float timeout = Time.time + Limit(25f);
+            while (Time.time < timeout && (InteriorDirector.Instance.Current == null || InteriorDirector.Instance.Travelling)) yield return null;
+            Interior inside = InteriorDirector.Instance.Current;
+            Check(inside != null, "walking through the door didn't go inside");
+            if (inside == null) yield break;
+            yield return new WaitForSeconds(0.3f);
+            int faded = 0;
+            foreach (FadeWall wall in inside.Walls)
+            {
+                foreach (Renderer renderer in wall.GetComponentsInChildren<Renderer>()) if (renderer.sharedMaterial.shader.name == "RPG/Fade") { faded++; break; }
+            }
+            Check(faded > 0, "no walls turned see-through between the camera and the player");
+            Check(Station.Nearest(StationKind.Fire, player.transform.position, 12f) != null, "houses should have a fireplace to cook at");
+            if (watch)
+            {
+                // a look around the room
+                yield return GoNear(inside.Root.position + new Vector3(1.5f, 0, 1f), 0f);
+                yield return new WaitForSeconds(1.5f);
+            }
+
+            Station exit = null;
+            foreach (Station station in Station.All)
+            {
+                Doorway doorway = station.GetComponent<Doorway>();
+                if (doorway != null && doorway.IsExit && doorway.Target == inside) exit = station;
+            }
+            Check(exit != null, "room has no way out");
+            if (exit == null) yield break;
+            Say("Leaving the house...");
+            user.Use(exit);
+            timeout = Time.time + Limit(20f);
+            while (Time.time < timeout && (InteriorDirector.Instance.Current != null || InteriorDirector.Instance.Travelling)) yield return null;
+            Check(InteriorDirector.Instance.Current == null, "couldn't leave the house");
+            Check(RpgUtil.FlatDistance(player.transform.position, door.transform.position) < 4f, "came out somewhere other than the front door");
         }
 
         IEnumerator TestBoss()
@@ -677,9 +909,27 @@ namespace RPG.Game
             int logs = inventory.Model.Count("logs_pine");
             int banked = bank.Model.Amount("axe_bronze");
 
-            Say("Saving, adding 5000 xp + 3 logs + a banked axe, then loading...");
+            Say("Opening the Esc menu (pauses the game)...");
+            float speed = Time.timeScale;
+            GameMenu.Instance.Open();
+            Check(GameMenu.Instance.IsOpen && Time.timeScale == 0f && UiState.Blocked, "Esc menu should pause the game and block input");
+            if (watch) yield return new WaitForSecondsRealtime(2f);
+            GameMenu.Instance.Close();
+            Check(!UiState.Blocked && Time.timeScale > 0f, "closing the menu should resume");
+            Time.timeScale = speed;
+
+            CharacterAppearance look = player.GetComponent<CharacterAppearance>();
+            PlayerStats stats = player.GetComponent<PlayerStats>();
+            int skin = look.Data.Skin;
+            string head = inventory.Model.HeadId;
+            int ammo = inventory.Model.AmmoCount;
+            MeleeStance stance = stats.ChosenStance;
+            Say("Saving, adding 5000 xp + 3 logs + a banked axe, changing looks and gear, then loading...");
             if (watch) yield return new WaitForSeconds(1f);
             saving.Save(SaveFile);
+            look.SetAppearance(new AppearanceData { Name = "Changed", Skin = skin + 1 });
+            inventory.Unequip(EquipSlot.Head);
+            stats.SetStance(stance == MeleeStance.Slash ? MeleeStance.Crush : MeleeStance.Slash);
             skills.AddXp(Skill.Woodcutting, 5000);
             skills.AddXp(Skill.Pyro, 5000);
             inventory.TryAdd("logs_pine", 3);
@@ -692,6 +942,9 @@ namespace RPG.Game
             Check(Math.Abs(skills.GetXp(Skill.Pyro) - pyro) < 0.001, "pyro xp not restored by load");
             Check(inventory.Model.Count("logs_pine") == logs, "inventory not restored by load");
             Check(bank.Model.Amount("axe_bronze") == banked, "bank not restored by load (" + bank.Model.Amount("axe_bronze") + " vs " + banked + ")");
+            Check(look.Data.Skin == skin && look.Data.Name == "Tester", "looks not restored by load");
+            Check(inventory.Model.HeadId == head && inventory.Model.AmmoCount == ammo, "worn gear not restored by load");
+            Check(stats.ChosenStance == stance, "combat style not restored by load");
             saving.Delete(SaveFile);
             Say("Load restored the saved xp and inventory.");
         }

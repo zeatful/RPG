@@ -138,6 +138,30 @@ namespace RPG.Core
             return Store(key, tris);
         }
 
+        /// <summary>
+        /// Box whose bottom face is 1 x 1 (x, z centred, y = 0) and top face topWidth x topDepth at y = 1.
+        /// Used for torsos (narrow waist, broad shoulders).
+        /// </summary>
+        public static Mesh TaperBox(float topWidth, float topDepth)
+        {
+            string key = "taper" + topWidth.ToString("0.00") + "_" + topDepth.ToString("0.00");
+            Mesh mesh;
+            if (meshes.TryGetValue(key, out mesh)) return mesh;
+            float tw = topWidth * 0.5f, td = topDepth * 0.5f;
+            Vector3[] bottom = { new Vector3(0.5f, 0, 0.5f), new Vector3(-0.5f, 0, 0.5f), new Vector3(-0.5f, 0, -0.5f), new Vector3(0.5f, 0, -0.5f) };
+            Vector3[] top = { new Vector3(tw, 1, td), new Vector3(-tw, 1, td), new Vector3(-tw, 1, -td), new Vector3(tw, 1, -td) };
+            List<Vector3> tris = new List<Vector3>();
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 a = bottom[i], b = bottom[(i + 1) % 4], c = top[i], d = top[(i + 1) % 4];
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+                tris.Add(Vector3.zero); tris.Add(a); tris.Add(b);
+                tris.Add(new Vector3(0, 1, 0)); tris.Add(d); tris.Add(c);
+            }
+            return Store(key, tris);
+        }
+
         /// <summary>Icosphere of radius 0.5 centred on the origin. jitter &gt; 0 makes it lumpy (rocks, foliage).</summary>
         public static Mesh Ico(int subdivisions, float jitter = 0f, int seed = 0)
         {

@@ -43,7 +43,6 @@ namespace RPG.World
                 return;
             }
             if (Open != null && (Open == null || !Open.isActiveAndEnabled || Open.DistanceTo(transform.position) > Station.UseRange + 2.5f)) Open = null;
-            if (Input.GetKeyDown(KeyCode.Escape)) Open = null;
             if (target == null) return;
 
             if (target.DistanceTo(transform.position) > Station.UseRange)
@@ -59,6 +58,13 @@ namespace RPG.World
             Vector3 look = target.transform.position;
             look.y = transform.position.y;
             if ((look - transform.position).sqrMagnitude > 0.01f) transform.LookAt(look);
+            if (target.Kind == RPG.Items.StationKind.Door)
+            {
+                Doorway door = target.GetComponent<Doorway>();
+                target = null;
+                if (InteriorDirector.Instance != null) InteriorDirector.Instance.Travel(door);
+                return;
+            }
             Open = target;
             target = null;
         }

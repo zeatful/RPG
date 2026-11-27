@@ -48,19 +48,21 @@ namespace RPG.Stats
         public StaminaModel Model { get; private set; }
 
         UnityEngine.AI.NavMeshAgent agent;
+        RPG.Movement.Mover mover;
         bool wasRunning;
 
         private void Awake()
         {
             Model = new StaminaModel();
             agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+            mover = GetComponent<RPG.Movement.Mover>();
             wasRunning = Model.Running;
         }
 
         private void Update()
         {
-            if (Input.GetKeyDown(KeyCode.R)) Toggle();
-            bool moving = agent != null && agent.enabled && agent.velocity.magnitude > 0.4f;
+            if (Input.GetKeyDown(KeyCode.R) && !RPG.Core.UiState.Blocked && !RPG.Core.UiState.Typing) Toggle();
+            bool moving = (agent != null && agent.enabled && agent.velocity.magnitude > 0.4f) || (mover != null && mover.ManualSpeed > 0.4f);
             Model.Tick(Time.deltaTime, moving);
             if (wasRunning && !Model.Running) RPG.Core.GameLog.Add("You're out of breath and slow to a walk.", RPG.Core.GameLog.Warning);
             wasRunning = Model.Running;

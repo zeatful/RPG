@@ -38,3 +38,5 @@ MonoBehaviour:
   Grass: {fileID: 107084, guid: 9ad607532c614c54ebd43e913aaf8857, type: 3}
   TreeLog: {fileID: 114594, guid: e0bcb36554be1124b8a89d63037350be, type: 3}
   Pumpkin: {fileID: 199514, guid: 626f1b816ba1ee64a9f7cea6ceb529cd, type: 3}
+  PlayerController: {fileID: 9100000, guid: eb0e22e8d434454688d1a5af249de33c, type: 2}
+  Fade: {fileID: 4800000, guid: a50911817589e9cc59bd9c8276142cd6, type: 3}

@@ -8,6 +8,38 @@ namespace RPG.Stats
     }
 
     /// <summary>
+    /// The melee stance the player picks. Each trains one skill and swings differently:
+    /// Slash (Attack) is quicker but hits lower, Crush (Strength) is slower and hits harder,
+    /// Bash (Defense) needs a shield and hits like Slash.
+    /// </summary>
+    public enum MeleeStance
+    {
+        Slash,
+        Crush,
+        Bash
+    }
+
+    /// <summary>Animation used for a swing (the "attackKind" animator parameter).</summary>
+    public enum AttackAnimation
+    {
+        Slash = 0,
+        Crush = 1,
+        Bash = 2,
+        Shoot = 3,
+        Cast = 4,
+        Chop = 5,
+        Mine = 6
+    }
+
+    /// <summary>Optional: overrides the Fighter's attack speed, max hit and swing animation (the player).</summary>
+    public interface IAttackStyle
+    {
+        float IntervalMultiplier { get; }
+        int MaxHit { get; }
+        AttackAnimation Animation { get; }
+    }
+
+    /// <summary>
     /// Levels and gear bonuses used by combat formulas. Implemented by the player and by enemies.
     /// For ranged/magic, AttackLevel and StrengthLevel return the Ranged/Magic level.
     /// </summary>

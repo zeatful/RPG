@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using RPG.Core;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 
 namespace RPG.EditorTools
@@ -54,6 +55,8 @@ namespace RPG.EditorTools
             art.Grass = Prefab("SM_Env_Grass_01");
             art.TreeLog = Prefab("SM_Env_TreeLog_01");
             art.Pumpkin = Prefab("SM_Prop_Pumpkin_01");
+            art.Fade = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/RpgFade.shader");
+            art.PlayerController = BuildPlayerController();
             if (art.VertexLit == null || art.Water == null) Debug.LogWarning("[RPG Art] world shaders missing");
             EditorUtility.SetDirty(art);
             AssetDatabase.SaveAssets();
@@ -65,6 +68,91 @@ namespace RPG.EditorTools
         {
             Run();
             EditorApplication.Exit(0);
+        }
+
+        const string PlayerControllerPath = "Assets/Game/Characters/Player.controller";
+        const string Anim = "Assets/Asset Packs/Animations/";
+
+        static AnimationClip Clip(string path)
+        {
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
+            {
+                AnimationClip clip = asset as AnimationClip;
+                if (clip != null && !clip.name.StartsWith("__preview")) return clip;
+            }
+            Debug.LogWarning("[RPG Art] no clip in " + path);
+            return null;
+        }
+
+        /// <summary>
+        /// The player's animator: the same idle/walk/run blend and death as the tutorial controller, plus an
+        /// attack state per AttackAnimation (picked with the int "attackKind", sped up by "attackSpeed").
+        /// </summary>
+        static RuntimeAnimatorController BuildPlayerController()
+        {
+            AssetDatabase.DeleteAsset(PlayerControllerPath);
+            AnimatorController controller = AnimatorController.CreateAnimatorControllerAtPath(PlayerControllerPath);
+            controller.AddParameter("ForwardSpeed", AnimatorControllerParameterType.Float);
+            controller.AddParameter("attack", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("stopAttack", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("die", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("attackKind", AnimatorControllerParameterType.Int);
+            AnimatorControllerParameter speed = new AnimatorControllerParameter { name = "attackSpeed", type = AnimatorControllerParameterType.Float, defaultFloat = 1f };
+            controller.AddParameter(speed);
+
+            AnimatorStateMachine machine = controller.layers[0].stateMachine;
+            BlendTree tree;
+            AnimatorState locomotion = controller.CreateBlendTreeInController("Locomotion", out tree, 0);
+            tree.blendParameter = "ForwardSpeed";
+            tree.useAutomaticThresholds = false;
+            tree.AddChild(Clip(Anim + "Unarmed/HumanoidIdle.fbx"), 0f);
+            tree.AddChild(Clip(Anim + "Unarmed/HumanoidWalk.fbx"), 1.5584016f);
+            tree.AddChild(Clip(Anim + "Unarmed/HumanoidRun.fbx"), 5.6623173f);
+            machine.defaultState = locomotion;
+
+            AnimatorState death = machine.AddState("Death");
+            death.motion = Clip(Anim + "Armed/RPG-Character@Armed-Death1.FBX");
+            AnimatorStateTransition toDeath = machine.AddAnyStateTransition(death);
+            toDeath.AddCondition(AnimatorConditionMode.If, 0, "die");
+            toDeath.canTransitionToSelf = false;
+            toDeath.duration = 0.15f;
+
+            string[] clips =
+            {
+                "Sword/RPG-Character@Sword-Attack-R6.FBX",        // Slash
+                "2Hand-Club/RPG-Character@2Hand-Club-Attack8.FBX", // Crush
+                "Unarmed/RPG-Character@Unarmed-Attack-L3.FBX",     // Bash (left jab with the shield arm)
+                "2Hand-Bow/RPG-Character@2Hand-Bow-Attack1.FBX",   // Shoot
+                "2Hand-Spear/RPG-Character@2Hand-Spear-Attack2.FBX", // Cast (staff thrust)
+                "Sword/RPG-Character@Sword-Attack-R6.FBX",        // Chop
+                "2Hand-Club/RPG-Character@2Hand-Club-Attack8.FBX", // Mine
+            };
+            string[] names = { "Slash", "Crush", "Bash", "Shoot", "Cast", "Chop", "Mine" };
+            for (int i = 0; i < clips.Length; i++)
+            {
+                AnimatorState attack = machine.AddState("Attack " + names[i]);
+                attack.motion = Clip(Anim + clips[i]);
+                attack.speedParameterActive = true;
+                attack.speedParameter = "attackSpeed";
+
+                AnimatorStateTransition enter = locomotion.AddTransition(attack);
+                enter.AddCondition(AnimatorConditionMode.If, 0, "attack");
+                enter.AddCondition(AnimatorConditionMode.Equals, i, "attackKind");
+                enter.hasExitTime = false;
+                enter.duration = 0.1f;
+
+                AnimatorStateTransition done = attack.AddTransition(locomotion);
+                done.hasExitTime = true;
+                done.exitTime = 0.85f;
+                done.duration = 0.2f;
+
+                AnimatorStateTransition stop = attack.AddTransition(locomotion);
+                stop.AddCondition(AnimatorConditionMode.If, 0, "stopAttack");
+                stop.hasExitTime = false;
+                stop.duration = 0.2f;
+            }
+            AssetDatabase.SaveAssets();
+            return controller;
         }
 
         static GameObject Prefab(string name)

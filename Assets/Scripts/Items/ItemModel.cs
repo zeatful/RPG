@@ -1,14 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using RPG.Stats;
 
 namespace RPG.Items
 {
+    /// <summary>Worn equipment slots. Ammo holds one stack (up to InventoryModel.AmmoCap).</summary>
     public enum EquipSlot
     {
         None,
         Weapon,
-        Body
+        Body,
+        Head,
+        Legs,
+        Shield,
+        Ammo
     }
 
     /// <summary>Gathering tools: the best one in your bag that you have the level for is used.</summary>
@@ -27,7 +33,8 @@ namespace RPG.Items
         Anvil,
         Fire,
         Bank,
-        Shop
+        Shop,
+        Door
     }
 
     /// <summary>Static definition of an item. Pure C#.</summary>
@@ -63,6 +70,9 @@ namespace RPG.Items
         public ToolKind Tool = ToolKind.None;
         public float ToolPower;
 
+        // Bows and staves need both hands, so no shield with them.
+        public bool TwoHanded;
+
         public bool IsEquippable { get { return Slot != EquipSlot.None; } }
         public bool IsEdible { get { return HealAmount > 0; } }
     }
@@ -90,25 +100,55 @@ namespace RPG.Items
         public int[] SlotQuantities;
         public string WeaponId;
         public string BodyId;
+        [OptionalField] public string HeadId;
+        [OptionalField] public string LegsId;
+        [OptionalField] public string ShieldId;
+        [OptionalField] public string AmmoId;
+        [OptionalField] public int AmmoCount;
     }
 
     /// <summary>
-    /// 28-slot inventory plus weapon/body equipment. Pure C# so it can be unit tested.
-    /// Stackable items share one slot; others take one slot each.
+    /// 28-slot inventory plus worn equipment (head, body, legs, weapon, shield, ammo). Pure C# so it can be
+    /// unit tested. Stackable items share one slot; others take one slot each. A two-handed weapon (bow,
+    /// staff) and a shield can't be worn together; the ammo slot holds one stack of up to AmmoCap.
     /// </summary>
     public class InventoryModel
     {
         public const int SlotCount = 28;
+        public const int AmmoCap = 999;
+
+        // Equipment slots in display / death-drop order (Ammo is handled separately as a stack).
+        public static readonly EquipSlot[] WornSlots = { EquipSlot.Head, EquipSlot.Body, EquipSlot.Legs, EquipSlot.Weapon, EquipSlot.Shield };
 
         readonly ItemStack[] slots = new ItemStack[SlotCount];
+        readonly Dictionary<EquipSlot, string> worn = new Dictionary<EquipSlot, string>();
         readonly Func<string, ItemInfo> lookup;
 
-        public string WeaponId { get; private set; }
-        public string BodyId { get; private set; }
+        public string WeaponId { get { return Worn(EquipSlot.Weapon); } }
+        public string BodyId { get { return Worn(EquipSlot.Body); } }
+        public string HeadId { get { return Worn(EquipSlot.Head); } }
+        public string LegsId { get { return Worn(EquipSlot.Legs); } }
+        public string ShieldId { get { return Worn(EquipSlot.Shield); } }
+        public string AmmoId { get; private set; }
+        public int AmmoCount { get; private set; }
 
         public InventoryModel(Func<string, ItemInfo> lookup)
         {
             this.lookup = lookup;
+        }
+
+        /// <summary>The item id worn in a slot (Ammo returns the ammo id), or null.</summary>
+        public string Worn(EquipSlot slot)
+        {
+            if (slot == EquipSlot.Ammo) return AmmoCount > 0 ? AmmoId : null;
+            string id;
+            return worn.TryGetValue(slot, out id) ? id : null;
+        }
+
+        void SetWorn(EquipSlot slot, string id)
+        {
+            if (string.IsNullOrEmpty(id)) worn.Remove(slot);
+            else worn[slot] = id;
         }
 
         public ItemStack GetSlot(int index)
@@ -123,6 +163,7 @@ namespace RPG.Items
             return free;
         }
 
+        /// <summary>How many are in the bag (not counting anything worn).</summary>
         public int Count(string itemId)
         {
             int total = 0;
@@ -199,8 +240,9 @@ namespace RPG.Items
         }
 
         /// <summary>
-        /// Equips the item in a slot, swapping any currently equipped item back into that slot.
-        /// levelOf returns the player's level in a skill (for requirements).
+        /// Equips the item in a bag slot, putting whatever it replaces back in the bag. A two-handed weapon
+        /// also takes off the shield (and a shield takes off a two-handed weapon). Ammo moves up to AmmoCap
+        /// into the ammo slot. levelOf returns the player's level in a skill (for requirements).
         /// </summary>
         public bool Equip(int index, Func<Skill, int> levelOf, out string failReason)
         {
@@ -217,26 +259,114 @@ namespace RPG.Items
                 return false;
             }
 
-            string previous = info.Slot == EquipSlot.Weapon ? WeaponId : BodyId;
-            slots[index] = string.IsNullOrEmpty(previous) ? new ItemStack() : new ItemStack(previous, 1);
-            if (info.Slot == EquipSlot.Weapon) WeaponId = info.Id; else BodyId = info.Id;
+            if (info.Slot == EquipSlot.Ammo) return EquipAmmo(index, info, out failReason);
+
+            // what has to come off: the same slot, plus a shield for a two-hander or a two-hander for a shield
+            List<string> off = new List<string>();
+            string same = Worn(info.Slot);
+            if (same != null) off.Add(same);
+            EquipSlot clash = EquipSlot.None;
+            if (info.Slot == EquipSlot.Weapon && info.TwoHanded && ShieldId != null) clash = EquipSlot.Shield;
+            if (info.Slot == EquipSlot.Shield)
+            {
+                ItemInfo weapon = lookup(WeaponId ?? "");
+                if (weapon != null && weapon.TwoHanded) clash = EquipSlot.Weapon;
+            }
+            if (clash != EquipSlot.None) off.Add(Worn(clash));
+
+            // the item's own slot frees up; anything beyond one needs another free slot
+            if (off.Count > 1 && FreeSlots() < off.Count - 1)
+            {
+                failReason = "Not enough inventory space to take off your " + lookup(off[off.Count - 1]).Name.ToLower() + ".";
+                return false;
+            }
+
+            slots[index] = new ItemStack();
+            SetWorn(info.Slot, info.Id);
+            if (clash != EquipSlot.None) SetWorn(clash, null);
+            for (int i = 0; i < off.Count; i++)
+            {
+                if (i == 0) slots[index] = new ItemStack(off[i], 1);
+                else Add(off[i], 1);
+            }
+            return true;
+        }
+
+        bool EquipAmmo(int index, ItemInfo info, out string failReason)
+        {
+            failReason = null;
+            ItemStack stack = slots[index];
+            if (AmmoCount > 0 && AmmoId != info.Id)
+            {
+                // swap: the old stack goes back to the bag
+                string oldId = AmmoId;
+                int oldCount = AmmoCount;
+                slots[index] = new ItemStack();
+                AmmoId = null;
+                AmmoCount = 0;
+                Add(oldId, oldCount);
+            }
+            int room = AmmoCap - AmmoCount;
+            if (room <= 0) { failReason = "You can't hold more than " + AmmoCap + " " + info.Name.ToLower() + "."; return false; }
+            int move = Math.Min(room, stack.Quantity);
+            AmmoId = info.Id;
+            AmmoCount += move;
+            int left = stack.Quantity - move;
+            ItemStack current = slots[index];
+            if (!current.IsEmpty && current.ItemId == info.Id) slots[index] = left > 0 ? new ItemStack(info.Id, left) : new ItemStack();
+            else if (left > 0) Add(info.Id, left);
             return true;
         }
 
         public bool Unequip(EquipSlot slot)
         {
-            string id = slot == EquipSlot.Weapon ? WeaponId : BodyId;
+            if (slot == EquipSlot.Ammo)
+            {
+                if (AmmoCount <= 0) return false;
+                if (!CanAdd(AmmoId, AmmoCount)) return false;
+                Add(AmmoId, AmmoCount);
+                AmmoId = null;
+                AmmoCount = 0;
+                return true;
+            }
+            string id = Worn(slot);
             if (string.IsNullOrEmpty(id)) return false;
             if (FindEmpty() < 0) return false;
             Add(id, 1);
-            if (slot == EquipSlot.Weapon) WeaponId = null; else BodyId = null;
+            SetWorn(slot, null);
             return true;
         }
 
+        /// <summary>Uses one piece of ammo of this id from the ammo slot.</summary>
+        public bool UseAmmo(string ammoId)
+        {
+            if (AmmoCount <= 0 || AmmoId != ammoId) return false;
+            AmmoCount--;
+            if (AmmoCount == 0) AmmoId = null;
+            return true;
+        }
+
+        /// <summary>Puts items straight into slots (starter kit, tests). Doesn't check requirements.</summary>
         public void SetEquipped(string weaponId, string bodyId)
         {
-            WeaponId = weaponId;
-            BodyId = bodyId;
+            SetWorn(EquipSlot.Weapon, weaponId);
+            SetWorn(EquipSlot.Body, bodyId);
+        }
+
+        public void SetWornDirect(EquipSlot slot, string id, int ammoCount = 0)
+        {
+            if (slot == EquipSlot.Ammo)
+            {
+                AmmoId = id;
+                AmmoCount = string.IsNullOrEmpty(id) ? 0 : Math.Min(AmmoCap, ammoCount);
+                return;
+            }
+            SetWorn(slot, id);
+        }
+
+        public bool HasAnythingWorn()
+        {
+            return worn.Count > 0 || AmmoCount > 0;
         }
 
         public int TotalAttackBonus() { return Bonus(i => i.AttackBonus); }
@@ -246,10 +376,11 @@ namespace RPG.Items
         int Bonus(Func<ItemInfo, int> pick)
         {
             int total = 0;
-            ItemInfo weapon = string.IsNullOrEmpty(WeaponId) ? null : lookup(WeaponId);
-            ItemInfo body = string.IsNullOrEmpty(BodyId) ? null : lookup(BodyId);
-            if (weapon != null) total += pick(weapon);
-            if (body != null) total += pick(body);
+            foreach (string id in worn.Values)
+            {
+                ItemInfo info = lookup(id);
+                if (info != null) total += pick(info);
+            }
             return total;
         }
 
@@ -257,31 +388,34 @@ namespace RPG.Items
         /// On death: keep only the single most valuable item (by item Value; equipment counts), remove
         /// everything else and return it so it can be dropped on the ground. keptId is null if nothing
         /// was worth keeping. Coins have no item value, so they are always dropped. If the kept item is a
-        /// stack (e.g. arrows) the whole stack is kept.
+        /// stack (arrows in the bag or the ammo slot) the whole stack is kept.
         /// </summary>
         public List<ItemStack> TakeAllExceptMostValuable(out string keptId)
         {
-            // find the most valuable single item and where it is: -1 weapon, -2 body, else a slot
+            // find the most valuable single item and where it is: -1-n worn slot n, -100 ammo, else a bag slot
             int bestValue = 0;
             int bestWhere = int.MinValue;
             keptId = null;
-            CheckBest(WeaponId, -1, ref bestValue, ref bestWhere, ref keptId);
-            CheckBest(BodyId, -2, ref bestValue, ref bestWhere, ref keptId);
+            for (int s = 0; s < WornSlots.Length; s++) CheckBest(Worn(WornSlots[s]), -1 - s, ref bestValue, ref bestWhere, ref keptId);
+            if (AmmoCount > 0) CheckBest(AmmoId, -100, ref bestValue, ref bestWhere, ref keptId);
             for (int i = 0; i < SlotCount; i++)
             {
                 if (!slots[i].IsEmpty) CheckBest(slots[i].ItemId, i, ref bestValue, ref bestWhere, ref keptId);
             }
 
             List<ItemStack> dropped = new List<ItemStack>();
-            if (!string.IsNullOrEmpty(WeaponId) && bestWhere != -1)
+            for (int s = 0; s < WornSlots.Length; s++)
             {
-                dropped.Add(new ItemStack(WeaponId, 1));
-                WeaponId = null;
+                string id = Worn(WornSlots[s]);
+                if (id == null || bestWhere == -1 - s) continue;
+                dropped.Add(new ItemStack(id, 1));
+                SetWorn(WornSlots[s], null);
             }
-            if (!string.IsNullOrEmpty(BodyId) && bestWhere != -2)
+            if (AmmoCount > 0 && bestWhere != -100)
             {
-                dropped.Add(new ItemStack(BodyId, 1));
-                BodyId = null;
+                dropped.Add(new ItemStack(AmmoId, AmmoCount));
+                AmmoId = null;
+                AmmoCount = 0;
             }
             for (int i = 0; i < SlotCount; i++)
             {
@@ -313,6 +447,11 @@ namespace RPG.Items
             }
             data.WeaponId = WeaponId;
             data.BodyId = BodyId;
+            data.HeadId = HeadId;
+            data.LegsId = LegsId;
+            data.ShieldId = ShieldId;
+            data.AmmoId = AmmoCount > 0 ? AmmoId : null;
+            data.AmmoCount = AmmoCount;
             return data;
         }
 
@@ -323,8 +462,14 @@ namespace RPG.Items
                 bool hasData = data.SlotIds != null && i < data.SlotIds.Length && data.SlotQuantities != null && i < data.SlotQuantities.Length;
                 slots[i] = hasData ? new ItemStack(data.SlotIds[i], data.SlotQuantities[i]) : new ItemStack();
             }
-            WeaponId = data.WeaponId;
-            BodyId = data.BodyId;
+            worn.Clear();
+            SetWorn(EquipSlot.Weapon, data.WeaponId);
+            SetWorn(EquipSlot.Body, data.BodyId);
+            SetWorn(EquipSlot.Head, data.HeadId);
+            SetWorn(EquipSlot.Legs, data.LegsId);
+            SetWorn(EquipSlot.Shield, data.ShieldId);
+            AmmoId = data.AmmoCount > 0 ? data.AmmoId : null;
+            AmmoCount = AmmoId != null ? data.AmmoCount : 0;
         }
 
         int FindSlot(string itemId)
@@ -366,7 +511,7 @@ namespace RPG.Items
 
         public bool HasTool(InventoryModel inventory)
         {
-            return string.IsNullOrEmpty(ToolId) || inventory.Count(ToolId) > 0;
+            return string.IsNullOrEmpty(ToolId) || inventory.Count(ToolId) > 0 || inventory.WeaponId == ToolId;
         }
 
         public bool HasLevel(Func<Skill, int> levelOf)

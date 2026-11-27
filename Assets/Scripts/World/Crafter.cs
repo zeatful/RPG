@@ -81,7 +81,11 @@ namespace RPG.World
                 animator.ResetTrigger("stopAttack");
                 animator.SetTrigger("attack");
             }
-            inventory.Make(recipe);
+            if (inventory.Make(recipe))
+            {
+                string sound = recipe.Station == StationKind.Anvil ? "anvil" : recipe.Station == StationKind.Furnace ? "smelt" : recipe.Station == StationKind.Fire ? "ignite" : "equip_cloth";
+                Sfx.At(sound, transform.position, recipe.Station == StationKind.Fire ? 0.35f : 0.7f);
+            }
             remaining--;
             if (remaining <= 0 || !inventory.CanMake(recipe)) Stop();
         }

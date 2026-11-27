@@ -19,13 +19,55 @@ namespace RPG.Combat
         Mover mover;
         ActionScheduler actionScheduler;
         Animator animator;
+        IAttackStyle attackStyle;
+        bool hasStyleParams;
 
         private void Start()
         {
             mover = GetComponent<Mover>();
             actionScheduler = GetComponent<ActionScheduler>();
             animator = GetComponent<Animator>();
+            attackStyle = GetComponent<IAttackStyle>();
+            RefreshAnimatorParams();
         }
+
+        /// <summary>Call after swapping the animator controller.</summary>
+        public void RefreshAnimatorParams()
+        {
+            hasStyleParams = false;
+            if (animator == null) animator = GetComponent<Animator>();
+            if (animator == null || animator.runtimeAnimatorController == null) return;
+            foreach (AnimatorControllerParameter parameter in animator.parameters)
+            {
+                if (parameter.name == "attackKind") hasStyleParams = true;
+            }
+        }
+
+        public float AttackInterval
+        {
+            get
+            {
+                float interval = timeBetweenAttacks / Mathf.Max(0.1f, AttackSpeedMultiplier);
+                if (attackStyle != null) interval *= attackStyle.IntervalMultiplier;
+                return interval;
+            }
+        }
+
+        /// <summary>Plays a swing animation without attacking (gathering uses this).</summary>
+        public void PlaySwing(AttackAnimation kind, float speed)
+        {
+            if (animator == null) return;
+            if (hasStyleParams)
+            {
+                animator.SetInteger("attackKind", (int)kind);
+                animator.SetFloat("attackSpeed", speed);
+            }
+            animator.ResetTrigger("stopAttack");
+            animator.SetTrigger("attack");
+        }
+
+        public bool HasTarget { get { return target != null; } }
+        public Health Target { get { return target; } }
 
         private void Update()
         {
@@ -58,7 +100,7 @@ namespace RPG.Combat
         {
             transform.LookAt(target.transform);
 
-            if (timeSinceLastAttack > timeBetweenAttacks / Mathf.Max(0.1f, AttackSpeedMultiplier))
+            if (timeSinceLastAttack > AttackInterval)
             {
                 TriggerAttack();
                 timeSinceLastAttack = 0;
@@ -68,8 +110,23 @@ namespace RPG.Combat
         private void TriggerAttack()
         {
             // This will trigger the Hit() event
+            if (hasStyleParams && attackStyle != null)
+            {
+                animator.SetInteger("attackKind", (int)attackStyle.Animation);
+                animator.SetFloat("attackSpeed", Mathf.Clamp(1f / Mathf.Max(0.3f, attackStyle.IntervalMultiplier), 0.8f, 1.6f));
+            }
             animator.ResetTrigger("stopAttack");
             animator.SetTrigger("attack");
+            if (onSwing != null) onSwing(gameObject);
+        }
+
+        // Fired when a swing starts (sound effects).
+        public static event System.Action<GameObject> onSwing;
+
+        // Animation Event on bow / item clips
+        void Shoot()
+        {
+            Hit();
         }
 
         // Fired for every swing that lands its animation: attacker, defender, damage (0 = miss).
@@ -114,8 +171,10 @@ namespace RPG.Combat
             int damage = 0;
             if (Random.value < chance)
             {
-                int maxHit = CombatMath.MaxHit(mine.StrengthLevel, mine.StrengthBonus);
+                int maxHit = attackStyle != null ? attackStyle.MaxHit : CombatMath.MaxHit(mine.StrengthLevel, mine.StrengthBonus);
                 damage = CombatMath.RollDamage(maxHit, Random.value * 0.9999f);
+                // Defense level and armour soak up part of every hit
+                damage = CombatMath.Reduce(damage, CombatMath.DamageReduction(defenseLevel, defenseBonus));
                 damage = Mathf.Min(damage, Mathf.CeilToInt(target.GetHealth()));
             }
 

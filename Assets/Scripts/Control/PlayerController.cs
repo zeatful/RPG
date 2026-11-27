@@ -27,10 +27,29 @@ namespace RPG.Control
         private void Update()
         {
             if (health.IsDead()) return;
+            if (UiState.Blocked) return;
+            if (InteractWithKeyboard()) return;
             if (UiState.PointerOverUi) return;
             if (InteractWithCombat()) return;
             if (InteractWithWorld()) return;
             if (InteractWithMovement()) return;
+        }
+
+        // WASD moves relative to the camera.
+        private bool InteractWithKeyboard()
+        {
+            if (UiState.Typing) return false;
+            float x = 0, z = 0;
+            if (Input.GetKey(KeyCode.W)) z += 1;
+            if (Input.GetKey(KeyCode.S)) z -= 1;
+            if (Input.GetKey(KeyCode.D)) x += 1;
+            if (Input.GetKey(KeyCode.A)) x -= 1;
+            if (x == 0 && z == 0) return false;
+            FollowCamera view = FollowCamera.Instance;
+            Vector3 forward = view != null ? view.FlatForward : Vector3.forward;
+            Vector3 right = view != null ? view.FlatRight : Vector3.right;
+            mover.DirectMove(forward * z + right * x);
+            return true;
         }
 
         private bool InteractWithCombat()

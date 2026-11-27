@@ -50,7 +50,7 @@ namespace RPG.UI
             return sprite;
         }
 
-        enum Kind { Sword, Bow, Wand, Arrows, Plate, Leather, Logs, Ore, Bar, Meat, Bones, Hide, Coins, Gem, Spark, Seed, Map, Crown, Quill, Fang, Hook, Pet, Sack, Axe, Pickaxe, Hammer, Flint, Bread, Cheese, Pie }
+        enum Kind { Sword, Bow, Wand, Arrows, Plate, Leather, Logs, Ore, Bar, Meat, Bones, Hide, Coins, Gem, Spark, Seed, Map, Crown, Quill, Fang, Hook, Pet, Sack, Axe, Pickaxe, Hammer, Flint, Bread, Cheese, Pie, Helm, Cowl, Legs, Chaps, Kite, RoundShield }
 
         static Kind KindOf(string id)
         {
@@ -64,7 +64,13 @@ namespace RPG.UI
             if (id.Contains("steak")) return Kind.Meat;
             if (id.StartsWith("sword")) return Kind.Sword;
             if (id.Contains("bow")) return Kind.Bow;
-            if (id.StartsWith("wand")) return Kind.Wand;
+            if (id.StartsWith("staff") || id.StartsWith("wand")) return Kind.Wand;
+            if (id.StartsWith("helm_")) return Kind.Helm;
+            if (id.EndsWith("_cowl")) return Kind.Cowl;
+            if (id.StartsWith("platelegs")) return Kind.Legs;
+            if (id.EndsWith("_chaps")) return Kind.Chaps;
+            if (id.StartsWith("kiteshield")) return Kind.Kite;
+            if (id.StartsWith("shield_")) return Kind.RoundShield;
             if (id.Contains("arrow")) return Kind.Arrows;
             if (id.StartsWith("platebody")) return Kind.Plate;
             if (id.EndsWith("_body")) return Kind.Leather;
@@ -120,9 +126,51 @@ namespace RPG.UI
                         c.Rect(8, 14, 3, 5, d);
                         break;
                     }
+                case Kind.Helm:
+                    c.Ellipse(16, 15, 10.5f, 11f, m);
+                    c.Rect(6, 15, 20, 11, m);
+                    c.Rect(9, 15, 14, 2.6f, Outline);
+                    c.Rect(15, 17, 2, 8, Outline);
+                    c.Ellipse(12, 9, 3.5f, 2.5f, l);
+                    c.Rect(14.5f, 3, 3, 9, l);
+                    c.Rect(6, 25, 20, 2, d);
+                    break;
+                case Kind.Cowl:
+                    c.Ellipse(16, 15, 11f, 12f, m);
+                    c.Ellipse(16, 18, 6.5f, 7f, Hex("#E3B78F"));
+                    c.Disc(13.5f, 17, 1f, Outline); c.Disc(18.5f, 17, 1f, Outline);
+                    c.Ellipse(11, 9, 3f, 2.2f, l);
+                    c.Rect(6, 26, 20, 3, d);
+                    break;
+                case Kind.Legs:
+                case Kind.Chaps:
+                    {
+                        bool plateLegs = KindOf(id) == Kind.Legs;
+                        c.Rect(7, 4, 18, 5, plateLegs ? d : Wood);
+                        c.Poly(m, new Vector2(7, 8), new Vector2(25, 8), new Vector2(27, 29), new Vector2(18.5f, 29), new Vector2(16, 14), new Vector2(13.5f, 29), new Vector2(5, 29));
+                        c.Poly(d, new Vector2(16, 14), new Vector2(18.5f, 29), new Vector2(27, 29), new Vector2(25, 8), new Vector2(20, 8));
+                        if (plateLegs)
+                        {
+                            c.Disc(10, 19, 2.4f, l); c.Disc(22, 19, 2.4f, l);
+                        }
+                        break;
+                    }
+                case Kind.Kite:
+                    c.Poly(d, new Vector2(16, 2), new Vector2(28, 7), new Vector2(26, 18), new Vector2(16, 30), new Vector2(6, 18), new Vector2(4, 7));
+                    c.Poly(m, new Vector2(16, 4.5f), new Vector2(25.5f, 8.5f), new Vector2(24, 17.5f), new Vector2(16, 27), new Vector2(8, 17.5f), new Vector2(6.5f, 8.5f));
+                    c.Rect(14.7f, 6, 2.6f, 18, l);
+                    c.Rect(9, 11, 14, 2.6f, l);
+                    break;
+                case Kind.RoundShield:
+                    c.Disc(16, 16, 13f, Hex("#4A3424"));
+                    c.Disc(16, 16, 11.2f, m);
+                    c.Line(10, 6, 10, 26, 0.8f, d); c.Line(16, 5, 16, 27, 0.8f, d); c.Line(22, 6, 22, 26, 0.8f, d);
+                    c.Disc(16, 16, 3.6f, Steel);
+                    c.Disc(15, 15, 1.3f, White);
+                    break;
                 case Kind.Wand:
-                    c.Line(6, 27, 21, 12, 2.6f, m);
-                    c.Line(7, 25, 20, 12, 0.9f, l);
+                    c.Line(4, 30, 22, 11, 2.6f, m);
+                    c.Line(5, 28, 21, 11, 0.9f, l);
                     c.Disc(23.5f, 9.5f, 4.2f, Spark);
                     c.Disc(22.5f, 8.5f, 1.8f, Hex("#FFF1C4"));
                     sparkles.Add(new Vector2(28, 4)); sparkles.Add(new Vector2(29, 12)); sparkles.Add(new Vector2(19, 4));

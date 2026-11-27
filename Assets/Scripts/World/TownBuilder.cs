@@ -34,10 +34,14 @@ namespace RPG.World
         static Transform root;
         static TownInfo town;
         static List<float> roads;
+        static System.Random random;
+        static int houseCount;
 
         public static void Build(TownInfo info, Transform world, RpgArt art)
         {
             town = info;
+            random = new System.Random(info.Name.GetHashCode() & 0x7fffffff);
+            houseCount = 0;
             root = new GameObject(info.Name).transform;
             root.SetParent(world, false);
             roads = WorldLayout.RoadAngles(info);
@@ -59,7 +63,7 @@ namespace RPG.World
                 Put(banker, bankAngle, 11f);
                 Station.Create(banker, StationKind.Bank, "Banker", info.Name);
             }
-            House(art, style, bankAngle, 18.5f, 1.45f);
+            House(art, style, bankAngle, 18.5f, 1.45f, "bank");
 
             // general store stall with its shopkeeper
             float shopAngle = main - 115f;
@@ -99,7 +103,7 @@ namespace RPG.World
             {
                 float angle = main + houses[i];
                 if (NearRoad(angle, 24f) || Mathf.Abs(Mathf.DeltaAngle(angle, bankAngle)) < 22f) continue;
-                House(art, style, angle, 21f + (i % 3) * 1.5f, 1.25f + (i % 2) * 0.15f);
+                House(art, style, angle, 21f + (i % 3) * 1.5f, 1.25f + (i % 2) * 0.15f, "home");
             }
 
             // lamp posts on the edge of the square
@@ -160,7 +164,9 @@ namespace RPG.World
             Props.Place(go, root, At(angle, radius), yaw);
         }
 
-        static void House(RpgArt art, Style style, float angle, float radius, float scale)
+        static readonly string[] HomeNames = { "Cottage", "Farmhouse", "Old house", "Cabin", "Homestead", "Lodge", "Cosy house", "Croft" };
+
+        static void House(RpgArt art, Style style, float angle, float radius, float scale, string kind)
         {
             if (art == null) return;
             GameObject house;
@@ -186,6 +192,14 @@ namespace RPG.World
             }
             else return;
             Put(house, angle, radius);
+
+            // a door on the side facing the square leads inside (a separate room, like an instance)
+            BoxCollider footprint = house.GetComponent<BoxCollider>();
+            if (footprint == null) return;
+            Vector3 front = house.transform.TransformPoint(footprint.center + new Vector3(0, 0, footprint.size.z * 0.5f));
+            Vector3 door = WorldBuilder.Ground(front.x, front.z) + house.transform.forward * 0.12f;
+            string name = kind == "bank" ? town.Name + " bank" : town.Name + " " + HomeNames[houseCount++ % HomeNames.Length].ToLower();
+            Interiors.Create(name, kind, town.Name, door, house.transform.eulerAngles.y, root, random);
         }
     }
 }

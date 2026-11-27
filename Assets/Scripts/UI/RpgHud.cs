@@ -50,7 +50,14 @@ namespace RPG.UI
         Crafter crafter;
 
         bool showInventory = true;
+        bool showEquipment = true;
         bool showSkills = false;
+        PlayerPortrait portrait;
+        CharacterAppearance appearance;
+
+        // last time each character fought (attacked or was attacked), for the overhead health bars
+        readonly Dictionary<Transform, float> lastFight = new Dictionary<Transform, float>();
+        const float OverheadSeconds = 6f;
         bool showMap = false;
         bool craftingTab = false;
         Vector2 recipeScroll;
@@ -85,11 +92,13 @@ namespace RPG.UI
             stamina = player.GetComponent<Stamina>();
             stationUser = player.GetComponent<StationUser>();
             crafter = player.GetComponent<Crafter>();
+            appearance = player.GetComponent<CharacterAppearance>();
+            portrait = GetComponent<PlayerPortrait>();
 
             if (WorldBuilder.Root != null)
             {
-                float cameraYaw = Camera.main != null ? Camera.main.transform.eulerAngles.y : 0f;
-                mapYaw = Mathf.Round(cameraYaw / 90f) * 90f;
+                // north-up maps (the camera turns freely now)
+                mapYaw = 0f;
                 mapTexture = WorldTerrain.MapTexture(320, mapYaw);
             }
 
@@ -128,6 +137,8 @@ namespace RPG.UI
 
         void OnAttackResolved(GameObject attacker, GameObject defender, int damage)
         {
+            if (attacker != null) lastFight[attacker.transform] = Time.time;
+            if (defender != null) lastFight[defender.transform] = Time.time;
             Hitsplat splat = new Hitsplat();
             splat.Target = defender.transform;
             splat.Damage = damage;
@@ -136,18 +147,46 @@ namespace RPG.UI
             hitsplats.Add(splat);
         }
 
+        bool Playing { get { return RPG.Game.GameSession.Instance == null || RPG.Game.GameSession.Instance.Playing; } }
+
         private void Update()
         {
-            if (Input.GetKeyDown(KeyCode.I)) showInventory = !showInventory;
-            if (Input.GetKeyDown(KeyCode.K)) showSkills = !showSkills;
-            if (Input.GetKeyDown(KeyCode.M) && mapTexture != null) showMap = !showMap;
+            if (!Playing) return;
+            if (!UiState.Blocked && !UiState.Typing)
+            {
+                if (Input.GetKeyDown(KeyCode.I)) showInventory = !showInventory;
+                if (Input.GetKeyDown(KeyCode.E)) showEquipment = !showEquipment;
+                if (Input.GetKeyDown(KeyCode.K)) showSkills = !showSkills;
+                if (Input.GetKeyDown(KeyCode.M) && mapTexture != null) showMap = !showMap;
+                if (Input.GetKeyDown(KeyCode.Alpha1)) stats.SetStance(MeleeStance.Slash);
+                if (Input.GetKeyDown(KeyCode.Alpha2)) stats.SetStance(MeleeStance.Crush);
+                if (Input.GetKeyDown(KeyCode.Alpha3)) stats.SetStance(MeleeStance.Bash);
+            }
             UpdateHover();
             UpdateZone();
         }
 
+        /// <summary>Esc: closes the top-most panel. False if nothing was open.</summary>
+        public bool CloseTopPanel()
+        {
+            if (stationUser != null && stationUser.Open != null)
+            {
+                stationUser.Close();
+                return true;
+            }
+            if (showMap)
+            {
+                showMap = false;
+                return true;
+            }
+            return false;
+        }
+
+        bool Indoors { get { return InteriorDirector.Instance != null && InteriorDirector.Instance.Current != null; } }
+
         void UpdateZone()
         {
-            if (WorldBuilder.Root == null || player == null) return;
+            if (WorldBuilder.Root == null || player == null || Indoors) return;
             Vector2 p = new Vector2(player.transform.position.x, player.transform.position.z);
             float townDistance;
             TownInfo town = WorldLayout.NearestTown(p, out townDistance);
@@ -187,7 +226,7 @@ namespace RPG.UI
                 Station station = hit.transform.GetComponentInParent<Station>();
                 if (station != null)
                 {
-                    hoverText = station.Verb + " " + station.Label;
+                    hoverText = station.Verb + " " + (station.Kind == StationKind.Door && station.Label != null ? station.Label.ToLower() : station.Label);
                     return;
                 }
                 ResourceNode node = hit.transform.GetComponentInParent<ResourceNode>();
@@ -204,9 +243,10 @@ namespace RPG.UI
             NodeInfo info = node.Info;
             string text = node.ActionVerb + " " + info.Name + " (" + info.Skill + " " + info.Level + ")";
             int level = skills.GetLevel(info.Skill);
-            ItemInfo tool = inventory.BestTool(info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe);
+            ToolKind kind = info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe;
+            ItemInfo tool = inventory.EquippedTool(kind);
             if (level < info.Level) return text + "\nYou need " + info.Skill + " " + info.Level;
-            if (tool == null) return text + "\nYou need " + (info.Kind == NodeKind.Tree ? "an axe" : "a pickaxe");
+            if (tool == null) return text + "\n" + (inventory.HasAnyTool(kind) ? "Wield your " + (kind == ToolKind.Axe ? "axe" : "pickaxe") + " first (click it in your bag)" : "You need to wield " + (kind == ToolKind.Axe ? "an axe" : "a pickaxe"));
             int swings = GameContent.SwingsNeeded(info, level, tool.ToolPower);
             return text + "\n~" + swings + " swing" + (swings == 1 ? "" : "s") + " per " + (info.Kind == NodeKind.Tree ? "log" : "ore") + " with your " + tool.Name.ToLower();
         }
@@ -229,6 +269,11 @@ namespace RPG.UI
         private void OnGUI()
         {
             if (player == null) return;
+            if (!Playing)
+            {
+                UiState.PointerOverUi = false;
+                return;
+            }
             InitStyles();
 
             scale = Mathf.Max(1f, Screen.height / 900f);
@@ -236,7 +281,7 @@ namespace RPG.UI
             float width = Screen.width / scale;
             float height = Screen.height / scale;
             // shrink inventory cells on short screens so the bag fits under the minimap
-            float room = height - 40f - (mapTexture != null ? 214f : 20f) - 168f;
+            float room = height - 40f - (mapTexture != null ? 214f : 20f) - 70f;
             Cell = Mathf.Clamp(Mathf.Floor(room / 7f), 40f, 54f);
 
             if (Event.current.type == EventType.Layout) panelRects.Clear();
@@ -244,8 +289,9 @@ namespace RPG.UI
             DrawWorldLabels();
             DrawNodeProgress();
             DrawNameplates();
+            DrawOverheadBars();
             DrawHitsplats();
-            DrawStatusBar();
+            DrawStatusBar(width);
             DrawBossBar(width);
             DrawMinimap(width);
             DrawXpDrops(width);
@@ -255,10 +301,12 @@ namespace RPG.UI
             if (open != null) showInventory = true;
             if (showInventory) DrawInventory(width, height);
             if (open != null) DrawStationPanel(open, width, height);
+            else if (showEquipment) DrawEquipment(width, height);
             if (showSkills) DrawSkills(height);
-            if (showMap) DrawWorldMap(width, height);
+            if (showMap && !Indoors) DrawWorldMap(width, height);
             DrawHelp(width, height);
             DrawHoverTooltip();
+            DrawFade(width, height);
 
             if (Event.current.type == EventType.Repaint || Event.current.type == EventType.Layout)
             {
@@ -321,14 +369,47 @@ namespace RPG.UI
                 Color color = diff <= -5 ? new Color(0.5f, 1f, 0.4f) : diff >= 5 ? new Color(1f, 0.4f, 0.35f) : new Color(1f, 0.9f, 0.4f);
                 Shadow(new Rect(pos.x - 90, pos.y - 30, 180, 18), enemy.Info.Name + " (lvl " + enemy.Info.Level + ")", shadowed, color);
 
-                float fraction = enemy.Health.GetFraction();
-                if (fraction < 1f)
-                {
-                    Rect bar = new Rect(pos.x - 30, pos.y - 10, 60, 6);
-                    Box(bar, new Color(0.6f, 0.05f, 0.05f, 0.9f));
-                    Box(new Rect(bar.x, bar.y, bar.width * fraction, bar.height), new Color(0.2f, 0.85f, 0.25f, 0.95f));
-                }
             }
+        }
+
+        /// <summary>
+        /// A thin bar over the player and over monsters while they're fighting (and a few seconds after),
+        /// green at full health turning red as it drops.
+        /// </summary>
+        void DrawOverheadBars()
+        {
+            if (Camera.main == null) return;
+            OverheadBar(player.transform, health, 2.15f);
+            foreach (EnemyProfile enemy in EnemyProfile.All)
+            {
+                if (enemy.Info == null || enemy.Health.IsDead()) continue;
+                OverheadBar(enemy.transform, enemy.Health, Mathf.Max(1.1f, enemy.NameplateHeight) - 0.15f);
+            }
+        }
+
+        void OverheadBar(Transform who, Health whose, float lift)
+        {
+            float last;
+            if (who == null || whose == null || whose.IsDead() || !lastFight.TryGetValue(who, out last)) return;
+            float age = Time.time - last;
+            if (age > OverheadSeconds) return;
+            Vector2 pos;
+            if (!WorldToGui(who.position + Vector3.up * lift, out pos)) return;
+            float alpha = Mathf.Clamp01((OverheadSeconds - age) / 1f);
+            float fraction = Mathf.Clamp01(whose.GetFraction());
+            Rect bar = new Rect(pos.x - 26, pos.y, 52, 5);
+            Box(new Rect(bar.x - 1, bar.y - 1, bar.width + 2, bar.height + 2), new Color(0, 0, 0, 0.75f * alpha));
+            Box(bar, new Color(0.25f, 0.05f, 0.05f, 0.85f * alpha));
+            Color fill = fraction > 0.5f ? Color.Lerp(new Color(0.95f, 0.85f, 0.15f), new Color(0.2f, 0.85f, 0.25f), (fraction - 0.5f) * 2f) : Color.Lerp(new Color(0.9f, 0.15f, 0.1f), new Color(0.95f, 0.85f, 0.15f), fraction * 2f);
+            fill.a = alpha;
+            Box(new Rect(bar.x, bar.y, bar.width * fraction, bar.height), fill);
+        }
+
+        void DrawFade(float width, float height)
+        {
+            InteriorDirector director = InteriorDirector.Instance;
+            if (director == null || director.FadeAlpha <= 0f) return;
+            Box(new Rect(0, 0, width, height), new Color(0, 0, 0, director.FadeAlpha));
         }
 
         void DrawHitsplats()
@@ -354,35 +435,36 @@ namespace RPG.UI
             }
         }
 
-        void DrawStatusBar()
+        void DrawStatusBar(float width)
         {
-            Rect rect = new Rect(12, 12, 250, 78);
+            Rect rect = new Rect(width / 2 - 160, 8, 320, 82);
             Panel(rect);
+            string name = appearance != null ? appearance.Data.Name : "You";
+            Shadow(new Rect(rect.x, rect.y + 4, rect.width, 18), name + "   -   combat " + skills.CombatLevel() + ", total " + skills.TotalLevel(), small, new Color(1f, 0.9f, 0.65f));
             float fraction = health.GetFraction();
-            Rect bar = new Rect(22, 22, 230, 18);
+            Rect bar = new Rect(rect.x + 10, rect.y + 22, rect.width - 20, 20);
             Box(bar, new Color(0.45f, 0.05f, 0.05f, 1f));
-            Box(new Rect(bar.x, bar.y, bar.width * fraction, bar.height), new Color(0.15f, 0.75f, 0.2f, 1f));
+            Color fill = Color.Lerp(new Color(0.85f, 0.15f, 0.1f), new Color(0.15f, 0.75f, 0.2f), Mathf.Clamp01(fraction * 1.6f - 0.3f));
+            Box(new Rect(bar.x, bar.y, bar.width * fraction, bar.height), fill);
             Shadow(bar, "HP " + Mathf.CeilToInt(health.GetHealth()) + " / " + Mathf.CeilToInt(health.GetMaxHealth()), shadowed, Color.white);
-            GUI.Label(new Rect(22, 65, 230, 20), "Combat level " + skills.CombatLevel() + "    Total level " + skills.TotalLevel(), small);
 
             // run energy: drains while running, refills while walking or standing
             if (stamina != null)
             {
                 StaminaModel model = stamina.Model;
-                Rect energy = new Rect(22, 44, 166, 14);
+                Rect energy = new Rect(rect.x + 10, rect.y + 46, rect.width - 86, 14);
                 Box(energy, new Color(0.2f, 0.18f, 0.1f, 1f));
                 Box(new Rect(energy.x, energy.y, energy.width * model.Energy / StaminaModel.Max, energy.height), model.Running ? new Color(0.95f, 0.75f, 0.2f, 1f) : new Color(0.6f, 0.55f, 0.4f, 1f));
                 Shadow(energy, "Stamina " + Mathf.FloorToInt(model.Energy), small, Color.white);
-                if (GUI.Button(new Rect(194, 42, 58, 18), model.Running ? "Run" : "Walk")) stamina.Toggle();
-                if (new Rect(22, 42, 230, 18).Contains(Event.current.mousePosition))
+                if (GUI.Button(new Rect(rect.xMax - 70, rect.y + 44, 60, 18), model.Running ? "Run" : "Walk")) stamina.Toggle();
+                if (new Rect(rect.x + 10, rect.y + 44, rect.width - 20, 18).Contains(Event.current.mousePosition))
                 {
                     slotTooltip = (model.Running ? "Running" : "Walking") + " (R to toggle)\nRunning drains stamina; walking or resting refills it.";
                 }
             }
-            if (DayNightCycle.Instance != null)
-            {
-                Shadow(new Rect(12, 92, 250, 18), DayNightCycle.Instance.ClockText, small, new Color(1f, 1f, 1f, 0.85f));
-            }
+            string clock = DayNightCycle.Instance != null ? DayNightCycle.Instance.ClockText : "";
+            string style = stats.Style == CombatStyle.Melee ? PlayerStats.StanceName(stats.Stance) + " (" + CombatMath.StanceSkill(stats.Stance) + ")" : stats.Style.ToString();
+            Shadow(new Rect(rect.x, rect.y + 63, rect.width, 18), clock + "     Style: " + style, small, new Color(1f, 1f, 1f, 0.85f));
         }
 
         void DrawBossBar(float width)
@@ -390,7 +472,7 @@ namespace RPG.UI
             BossController boss = BossController.Active;
             if (boss == null || !boss.IsEngaged || boss.Profile == null || boss.Profile.Info == null) return;
             Health bossHealth = boss.Profile.Health;
-            Rect rect = new Rect(width / 2 - 200, 14, 400, 44);
+            Rect rect = new Rect(width / 2 - 200, 96, 400, 44);
             Panel(rect);
             Shadow(new Rect(rect.x, rect.y + 4, rect.width, 18), boss.Profile.Info.Name + "  (level " + boss.Profile.Info.Level + ")", shadowed, new Color(1f, 0.55f, 0.4f));
             Rect bar = new Rect(rect.x + 12, rect.y + 24, rect.width - 24, 12);
@@ -425,7 +507,7 @@ namespace RPG.UI
             if (age > 3.5f) return;
             Color color = banner.Color;
             color.a = Mathf.Clamp01(3.5f - age);
-            Shadow(new Rect(0, 90, width, 36), banner.Text, title, color);
+            Shadow(new Rect(0, 146, width, 36), banner.Text, title, color);
         }
 
         void DrawLog(float height)
@@ -445,7 +527,7 @@ namespace RPG.UI
         void DrawHelp(float width, float height)
         {
             Shadow(new Rect(12, height - 28, width - 24, 20),
-                "Click: move / attack / gather / loot / use     R: walk/run     I: inventory     K: skills     M: map     Esc: close     S / L: save / load",
+                "Click or WASD: move     Arrows: camera     R: walk/run     1/2/3: combat style     I: bag   E: equipment   K: skills   M: map     Esc: menu",
                 small, new Color(1, 1, 1, 0.8f));
         }
 
@@ -469,7 +551,7 @@ namespace RPG.UI
         void DrawInventory(float width, float height)
         {
             float panelWidth = Columns * Cell + 24;
-            float panelHeight = 7 * Cell + 168;
+            float panelHeight = 7 * Cell + 52;
             Rect rect = new Rect(width - panelWidth - 12, height - panelHeight - 40, panelWidth, panelHeight);
             Panel(rect);
 
@@ -481,38 +563,132 @@ namespace RPG.UI
             if (GUI.Toggle(new Rect(x + tab + 8, y, tab, 24), craftingTab, "Make", "Button")) craftingTab = true;
             y += 32;
 
-            InventoryModel model = inventory.Model;
-
-            // equipment
-            y = DrawEquipRow(x, y, panelWidth - 24, "Weapon", model.WeaponId, EquipSlot.Weapon);
-            y = DrawEquipRow(x, y, panelWidth - 24, "Body", model.BodyId, EquipSlot.Body);
-            GUI.Label(new Rect(x, y, panelWidth, 18),
-                "Atk +" + model.TotalAttackBonus() + "  Str +" + model.TotalStrengthBonus() + "  Def +" + model.TotalDefenseBonus()
-                + "  Hit " + CombatMath.MaxHit(stats.StrengthLevel, model.TotalStrengthBonus()), small);
-            y += 18;
-            ItemInfo weapon = GameContent.Item(model.WeaponId);
-            string styleText = "Style: " + stats.Style;
-            if (weapon != null && !string.IsNullOrEmpty(weapon.AmmoId))
-            {
-                ItemInfo ammo = GameContent.Item(weapon.AmmoId);
-                styleText += "   " + (ammo != null ? ammo.Name : weapon.AmmoId) + ": " + model.Count(weapon.AmmoId);
-            }
-            GUI.Label(new Rect(x, y, panelWidth, 18), styleText, small);
-            y += 22;
-
             if (craftingTab) DrawRecipes(new Rect(x, y, panelWidth - 24, rect.yMax - y - 10));
             else DrawSlots(x, y);
         }
 
-        float DrawEquipRow(float x, float y, float width, string slotName, string itemId, EquipSlot slot)
+        // ---------------------------------------------------------------- Equipment
+
+        static readonly string[] SlotNames = { "Head", "Body", "Legs", "Weapon", "Shield", "Ammo" };
+
+        void DrawEquipment(float width, float height)
         {
-            ItemInfo info = GameContent.Item(itemId);
-            GUI.Label(new Rect(x, y, 60, 20), slotName + ":", bold);
-            Texture2D icon = info != null ? ItemIcons.Get(itemId) : null;
-            if (icon != null) GUI.DrawTexture(new Rect(x + 58, y, 20, 20), icon, ScaleMode.ScaleToFit);
-            GUI.Label(new Rect(x + 80, y, width - 118, 20), info != null ? info.Name : "-", label);
-            if (info != null && GUI.Button(new Rect(x + width - 36, y, 36, 18), "Off")) inventory.Unequip(slot);
-            return y + 22;
+            float inventoryWidth = Columns * Cell + 24;
+            float panelWidth = 250f;
+            float panelHeight = 7 * Cell + 52;
+            Rect rect = new Rect(width - inventoryWidth - 12 - panelWidth - 8, height - panelHeight - 40, panelWidth, panelHeight);
+            Panel(rect);
+            Shadow(new Rect(rect.x + 10, rect.y + 6, rect.width - 20, 18), "Equipment  (E)", bold, new Color(1f, 0.9f, 0.6f));
+
+            // a live picture of the character, with slots around it
+            Rect picture = new Rect(rect.x + 45, rect.y + 28, 160, 210);
+            Box(picture, new Color(0.14f, 0.12f, 0.1f, 0.9f));
+            if (portrait != null)
+            {
+                portrait.Want();
+                if (portrait.Texture != null) GUI.DrawTexture(picture, portrait.Texture, ScaleMode.ScaleToFit, true);
+                if (picture.Contains(Event.current.mousePosition) && Event.current.type == EventType.MouseDrag)
+                {
+                    portrait.Turn += Event.current.delta.x;
+                    Event.current.Use();
+                }
+            }
+            InventoryModel model = inventory.Model;
+            float s = 40f;
+            EquipCell(new Rect(rect.center.x - s / 2, rect.y + 30, s, s), EquipSlot.Head);
+            EquipCell(new Rect(rect.xMax - s - 6, rect.y + 30, s, s), EquipSlot.Ammo);
+            EquipCell(new Rect(rect.x + 6, rect.y + 100, s, s), EquipSlot.Weapon);
+            EquipCell(new Rect(rect.center.x - s / 2, rect.y + 120, s, s), EquipSlot.Body);
+            EquipCell(new Rect(rect.xMax - s - 6, rect.y + 100, s, s), EquipSlot.Shield);
+            EquipCell(new Rect(rect.center.x - s / 2, rect.y + 196, s, s), EquipSlot.Legs);
+
+            float y = rect.y + 246;
+            GUI.Label(new Rect(rect.x + 10, y, rect.width - 20, 18), "Atk +" + model.TotalAttackBonus() + "   Str +" + model.TotalStrengthBonus() + "   Def +" + model.TotalDefenseBonus(), small);
+            y += 16;
+            int reduction = Mathf.RoundToInt((float)CombatMath.DamageReduction(skills.GetLevel(Skill.Defense), model.TotalDefenseBonus()) * 100f);
+            GUI.Label(new Rect(rect.x + 10, y, rect.width - 20, 18), "Max hit " + stats.MaxHit + "   Blocks " + reduction + "% of damage", small);
+            y += 22;
+
+            // combat style
+            if (stats.Style == CombatStyle.Melee)
+            {
+                GUI.Label(new Rect(rect.x + 10, y, rect.width - 20, 18), "Combat style (1 / 2 / 3)", small);
+                y += 18;
+                float bw = (rect.width - 28) / 3f;
+                MeleeStance[] stances = { MeleeStance.Slash, MeleeStance.Crush, MeleeStance.Bash };
+                string[] labels = { "Slash", "Crush", "Bash" };
+                for (int i = 0; i < 3; i++)
+                {
+                    Rect button = new Rect(rect.x + 10 + i * (bw + 4), y, bw, 26);
+                    bool enabled = stances[i] != MeleeStance.Bash || stats.HasShield;
+                    bool old = GUI.enabled;
+                    GUI.enabled = enabled;
+                    bool on = GUI.Toggle(button, stats.Stance == stances[i], labels[i], "Button");
+                    GUI.enabled = old;
+                    if (on && stats.Stance != stances[i]) stats.SetStance(stances[i]);
+                    if (button.Contains(Event.current.mousePosition)) slotTooltip = StanceTooltip(stances[i]);
+                }
+                y += 30;
+                GUI.Label(new Rect(rect.x + 10, y, rect.width - 20, 34), StanceSummary(stats.Stance), new GUIStyle(small) { wordWrap = true });
+            }
+            else
+            {
+                ItemInfo weapon = GameContent.Item(model.WeaponId);
+                ItemInfo ammo = weapon != null ? GameContent.Item(weapon.AmmoId) : null;
+                string count = ammo == null ? "" : ammo.Slot == EquipSlot.Ammo ? (model.AmmoId == ammo.Id ? model.AmmoCount : 0) + " equipped" : model.Count(ammo.Id) + " in bag";
+                GUI.Label(new Rect(rect.x + 10, y, rect.width - 20, 34), stats.Style + " (trains " + stats.Style + ")\n" + (ammo != null ? ammo.Name + ": " + count : ""), new GUIStyle(small) { wordWrap = true });
+            }
+        }
+
+        static string StanceTooltip(MeleeStance stance)
+        {
+            switch (stance)
+            {
+                case MeleeStance.Crush: return "Crush (trains Strength)\nSlower, heavy blows that hit hardest and scale with Strength.";
+                case MeleeStance.Bash: return "Shield bash (trains Defense)\nNeeds a shield. Hits as fast and as hard as Slash.";
+                default: return "Slash (trains Attack)\nQuicker swings that hit a little lower.";
+            }
+        }
+
+        static string StanceSummary(MeleeStance stance)
+        {
+            switch (stance)
+            {
+                case MeleeStance.Crush: return "Crush: slow, heavy hits. Trains Strength.";
+                case MeleeStance.Bash: return "Shield bash: quick hits. Trains Defense.";
+                default: return "Slash: quick, lighter hits. Trains Attack.";
+            }
+        }
+
+        void EquipCell(Rect cell, EquipSlot slot)
+        {
+            InventoryModel model = inventory.Model;
+            string id = model.Worn(slot);
+            ItemInfo info = GameContent.Item(id);
+            Box(cell, new Color(0.2f, 0.18f, 0.15f, 0.95f));
+            Box(new Rect(cell.x, cell.y, cell.width, 1), new Color(0.75f, 0.6f, 0.3f, 0.6f));
+            if (info == null)
+            {
+                Shadow(cell, SlotNames[(int)slot - 1], new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 9 }, new Color(1, 1, 1, 0.35f));
+            }
+            else
+            {
+                Texture2D icon = ItemIcons.Get(id);
+                if (icon != null) GUI.DrawTexture(new Rect(cell.x + 3, cell.y + 3, cell.width - 6, cell.height - 6), icon, ScaleMode.ScaleToFit);
+                if (slot == EquipSlot.Ammo) Shadow(new Rect(cell.x + 2, cell.y, cell.width, 16), QuantityText(model.AmmoCount), small, Color.yellow);
+            }
+            if (!cell.Contains(Event.current.mousePosition)) return;
+            if (info == null)
+            {
+                slotTooltip = SlotNames[(int)slot - 1] + " slot (empty)" + (slot == EquipSlot.Ammo ? "\nEquip up to " + InventoryModel.AmmoCap + " arrows" : "");
+                return;
+            }
+            slotTooltip = ItemTooltip(info, true) + "\nClick: take off";
+            if (Event.current.type == EventType.MouseDown)
+            {
+                inventory.Unequip(slot);
+                Event.current.Use();
+            }
         }
 
         void DrawSlots(float x, float y)
@@ -554,7 +730,7 @@ namespace RPG.UI
                         if (e.type == EventType.MouseDown)
                         {
                             string message;
-                            ShopLogic.TrySell(inventory.Model, info.Id, e.button == 0 ? 1 : int.MaxValue, out message);
+                            if (ShopLogic.TrySell(inventory.Model, info.Id, e.button == 0 ? 1 : int.MaxValue, out message)) Sfx.Ui("coins", 0.6f);
                             if (message != null) GameLog.Add(message);
                             inventory.NotifyChanged();
                             e.Use();
@@ -576,6 +752,11 @@ namespace RPG.UI
 
         string ItemTooltip(ItemInfo info)
         {
+            return ItemTooltip(info, false);
+        }
+
+        string ItemTooltip(ItemInfo info, bool worn)
+        {
             string text = info.Name;
             if (!string.IsNullOrEmpty(info.Tier))
             {
@@ -588,23 +769,21 @@ namespace RPG.UI
             }
             else if (info.IsEquippable)
             {
+                string slotName = info.Slot == EquipSlot.Weapon ? (info.TwoHanded ? "Two-handed weapon" : info.Tool != ToolKind.None ? "Tool (wield it to " + (info.Tool == ToolKind.Axe ? "chop" : "mine") + ")" : "One-handed weapon") : SlotNames[(int)info.Slot - 1];
+                text += "\n" + slotName;
                 if (info.Style != CombatStyle.Melee)
                 {
                     ItemInfo ammo = GameContent.Item(info.AmmoId);
-                    text += "\n" + info.Style + " weapon, range " + info.Range + "m, uses " + (ammo != null ? ammo.Name.ToLower() : "nothing");
+                    text += "\n" + info.Style + ", range " + info.Range + "m, uses " + (ammo != null ? ammo.Name.ToLower() : "nothing");
                 }
-                text += "\nAtk +" + info.AttackBonus + "  Str +" + info.StrengthBonus + "  Def +" + info.DefenseBonus;
+                if (info.Tool != ToolKind.None) text += "\n" + Mathf.RoundToInt(info.ToolPower * 100f) + "% swing power";
+                if (info.Slot != EquipSlot.Ammo) text += "\nAtk +" + info.AttackBonus + "  Str +" + info.StrengthBonus + "  Def +" + info.DefenseBonus;
                 text += "\nRequires " + info.RequiredSkill + " " + info.RequiredLevel;
-                text += "\nLeft-click: equip    Right-click: drop";
+                if (!worn) text += info.Slot == EquipSlot.Ammo ? "\nLeft-click: equip (up to " + InventoryModel.AmmoCap + ")    Right-click: drop" : "\nLeft-click: equip    Right-click: drop";
             }
             else if (info.IsEdible)
             {
                 text += "\nHeals " + info.HealAmount + "\nLeft-click: eat    Right-click: drop";
-            }
-            else if (info.Tool != ToolKind.None)
-            {
-                text += "\n" + (info.Tool == ToolKind.Axe ? "Axe" : "Pickaxe") + ": needs " + info.RequiredSkill + " " + info.RequiredLevel
-                    + ", " + Mathf.RoundToInt(info.ToolPower * 100f) + "% swing power\nKeep it in your bag.    Right-click: drop";
             }
             else if (GameContent.Burnables.ContainsKey(info.Id))
             {
@@ -688,29 +867,32 @@ namespace RPG.UI
         {
             if (Camera.main == null || WorldBuilder.Root == null) return;
             Vector3 me = player.transform.position;
-            foreach (TownInfo town in WorldLayout.Towns)
+            if (!Indoors)
             {
-                Vector3 centre = new Vector3(town.Center.x, me.y, town.Center.y);
-                float distance = RpgUtil.FlatDistance(centre, me);
-                if (distance > 90f || distance < 6f) continue;
-                Vector2 pos;
-                if (!WorldToGui(new Vector3(town.Center.x, WorldTerrain.GroundY(town.Center.x, town.Center.y) + 9f, town.Center.y), out pos)) continue;
-                Color color = new Color(1f, 0.88f, 0.55f, Mathf.Clamp01((90f - distance) / 20f));
-                Shadow(new Rect(pos.x - 120, pos.y - 14, 240, 28), town.Name, title, color);
-            }
-            float toSpawn = RpgUtil.FlatDistance(WorldBuilder.StartPosition, me);
-            Vector2 spawnPos;
-            if (toSpawn < 16f && WorldToGui(WorldBuilder.StartPosition + Vector3.up * 2.4f, out spawnPos))
-            {
-                Shadow(new Rect(spawnPos.x - 90, spawnPos.y - 9, 180, 18), "Spawn point", shadowed, new Color(0.6f, 0.95f, 1f, Mathf.Clamp01((16f - toSpawn) / 4f)));
+                foreach (TownInfo town in WorldLayout.Towns)
+                {
+                    Vector3 centre = new Vector3(town.Center.x, me.y, town.Center.y);
+                    float distance = RpgUtil.FlatDistance(centre, me);
+                    if (distance > 90f || distance < 6f) continue;
+                    Vector2 pos;
+                    if (!WorldToGui(new Vector3(town.Center.x, WorldTerrain.GroundY(town.Center.x, town.Center.y) + 9f, town.Center.y), out pos)) continue;
+                    Color color = new Color(1f, 0.88f, 0.55f, Mathf.Clamp01((90f - distance) / 20f));
+                    Shadow(new Rect(pos.x - 120, pos.y - 14, 240, 28), town.Name, title, color);
+                }
+                float toSpawn = RpgUtil.FlatDistance(WorldBuilder.StartPosition, me);
+                Vector2 spawnPos;
+                if (toSpawn < 16f && WorldToGui(WorldBuilder.StartPosition + Vector3.up * 2.4f, out spawnPos))
+                {
+                    Shadow(new Rect(spawnPos.x - 90, spawnPos.y - 9, 180, 18), "Spawn point", shadowed, new Color(0.6f, 0.95f, 1f, Mathf.Clamp01((16f - toSpawn) / 4f)));
+                }
             }
             foreach (Station station in Station.All)
             {
                 if (station.Kind == StationKind.Fire && station.Town == null) continue;
                 float distance = RpgUtil.FlatDistance(station.transform.position, me);
-                if (distance > 14f) continue;
+                if (distance > (station.Kind == StationKind.Door ? 7f : 14f)) continue;
                 Vector2 pos;
-                float lift = station.Kind == StationKind.Furnace ? 3.8f : station.Kind == StationKind.Shop ? 3.0f : 2.3f;
+                float lift = station.Kind == StationKind.Furnace ? 3.8f : station.Kind == StationKind.Shop ? 3.0f : station.Kind == StationKind.Door ? 2.6f : 2.3f;
                 if (!WorldToGui(station.transform.position + Vector3.up * lift, out pos)) continue;
                 if (station.GetComponent<Animator>() != null) continue; // NPCs share the label of their counter
                 Shadow(new Rect(pos.x - 90, pos.y - 9, 180, 18), station.Label, shadowed, new Color(0.85f, 0.95f, 1f, Mathf.Clamp01((14f - distance) / 4f)));
@@ -754,6 +936,14 @@ namespace RPG.UI
             Rect frame = new Rect(width - size - 16, 12, size + 4, size + 22);
             Panel(frame);
             Rect rect = new Rect(frame.x + 2, frame.y + 2, size, size);
+            if (Indoors)
+            {
+                Box(rect, new Color(0.12f, 0.1f, 0.08f, 1f));
+                Shadow(new Rect(rect.x, rect.y + size / 2 - 20, size, 20), "Indoors", bold, new Color(1f, 0.9f, 0.65f));
+                Shadow(new Rect(rect.x, rect.y + size / 2, size, 20), "Leave by the door", small, Color.white);
+                Shadow(new Rect(frame.x, frame.yMax - 19, frame.width, 18), InteriorDirector.Instance.Current.Name, small, new Color(1f, 0.92f, 0.7f));
+                return;
+            }
 
             Vector2 centre = MapUv(player.transform.position);
             float span = MinimapMeters / (2f * WorldLayout.Extent);
@@ -763,6 +953,7 @@ namespace RPG.UI
             foreach (Station station in Station.All)
             {
                 if (station.Kind == StationKind.Fire && station.Town == null) continue;
+                if (station.Kind == StationKind.Door) continue;
                 if (station.GetComponent<Animator>() != null) continue;
                 Vector2 p;
                 if (!MiniPoint(rect, uv, station.transform.position, out p)) continue;
@@ -785,6 +976,13 @@ namespace RPG.UI
             Vector2 me;
             MiniPoint(rect, uv, player.transform.position, out me);
             Box(new Rect(me.x - 3, me.y - 3, 6, 6), Color.white);
+            // which way the camera looks, and north
+            if (FollowCamera.Instance != null)
+            {
+                Vector3 look = FollowCamera.Instance.FlatForward;
+                for (int i = 1; i <= 4; i++) Box(new Rect(me.x + look.x * i * 4f - 1, me.y - look.z * i * 4f - 1, 2, 2), new Color(1, 1, 1, 0.8f));
+            }
+            Shadow(new Rect(rect.center.x - 10, rect.y + 2, 20, 16), "N", bold, Color.white);
 
             string zone = currentZone ?? "";
             Shadow(new Rect(frame.x, frame.yMax - 19, frame.width, 18), zone, small, new Color(1f, 0.92f, 0.7f));
@@ -946,6 +1144,7 @@ namespace RPG.UI
             string message;
             bool ok = ShopLogic.TryBuy(inventory.Model, id, quantity, out message);
             if (message != null) GameLog.Add(message, ok ? GameLog.Normal : GameLog.Warning);
+            if (ok) Sfx.Ui("coins", 0.6f);
             inventory.NotifyChanged();
         }
 
@@ -1027,14 +1226,14 @@ namespace RPG.UI
         {
             switch (skill)
             {
-                case Skill.Attack: return "Trained by dealing melee damage. Raises accuracy.";
-                case Skill.Strength: return "Trained by dealing melee damage. Raises max hit.";
-                case Skill.Defense: return "Trained by being attacked (bonus for dodges).";
+                case Skill.Attack: return "Trained in the Slash style. Raises accuracy and lets you wield better weapons.";
+                case Skill.Strength: return "Trained in the Crush style. Raises your max hit.";
+                case Skill.Defense: return "Trained in the Shield bash style (needs a shield). Blocks damage; lets you wear better armour.";
                 case Skill.Vitality: return "Trained by all combat. 10 HP per level.";
                 case Skill.Ranged: return "Equip a bow (craft one from logs) and craft arrows.";
-                case Skill.Magic: return "Equip a wand; spark stones come from copper/tin rocks and Gnarls.";
-                case Skill.Woodcutting: return "Click trees with an axe. Pine 1, Oak 15, Willow 30, Maple 45, Yew 60, Ashwood 75.";
-                case Skill.Mining: return "Click rocks with a pickaxe. Copper/Tin 1, Iron 15, Coal 30, Verdite 40, Cobalt 55, Cinderite 70.";
+                case Skill.Magic: return "Wield a staff; it burns spark stones from your bag (copper/tin rocks and Gnarls drop them).";
+                case Skill.Woodcutting: return "Wield an axe and click trees. Pine 1, Oak 15, Willow 30, Maple 45, Yew 60, Ashwood 75.";
+                case Skill.Mining: return "Wield a pickaxe and click rocks. Copper/Tin 1, Iron 15, Coal 30, Verdite 40, Cobalt 55, Cinderite 70.";
                 case Skill.Smithing: return "Smelt bars at a furnace, then hammer them into gear at an anvil.";
                 case Skill.Crafting: return "Bows, arrows and leather armour in the Make tab (I).";
                 case Skill.Pyro: return "Buy a flint and steel, then click logs in your bag. Same log levels as Woodcutting.";

@@ -37,6 +37,12 @@ namespace RPG.Core
         public GameObject TreeLog;
         public GameObject Pumpkin;
 
+        // Player: animator with one attack state per swing type (slash, crush, bash, bow, staff, chop, mine)
+        public RuntimeAnimatorController PlayerController;
+
+        // see-through walls between the camera and the player indoors
+        public Shader Fade;
+
         static RpgArt instance;
         static bool loaded;
 

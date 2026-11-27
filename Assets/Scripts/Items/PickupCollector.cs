@@ -48,6 +48,7 @@ namespace RPG.Items
             else
             {
                 GameLog.Add("You pick up: " + target.Label + ".");
+                RPG.Core.Sfx.At(target.Label.ToLower().Contains("coins") ? "coins" : "pickup", transform.position, 0.6f);
                 if (left > 0) target.Stack = new ItemStack(stack.ItemId, left);
                 else Destroy(target.gameObject);
                 inventory.NotifyChanged();

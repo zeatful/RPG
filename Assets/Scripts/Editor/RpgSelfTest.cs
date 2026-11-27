@@ -54,6 +54,10 @@ namespace RPG.EditorTools
             Run("Death drops", TestDeathDrops);
             Run("Stamina", TestStamina);
             Run("Node respawns", TestNodeRespawns);
+            Run("Worn slots", TestWornSlots);
+            Run("Combat styles", TestCombatStyles);
+            Run("Armour sets", TestArmourSets);
+            Run("Character names", TestCharacterNames);
 
             foreach (string failure in failures) Debug.LogError("[RPG SelfTest] FAIL " + failure);
             Debug.Log("[RPG SelfTest] " + passed + " checks passed, " + failures.Count + " failed.");
@@ -525,6 +529,154 @@ namespace RPG.EditorTools
                 }
             }
             Check(RPG.World.WorldBuilder.AggroRange <= 6f && RPG.World.WorldBuilder.ChaseLeash >= 12f && RPG.World.WorldBuilder.ChaseLeash <= 25f && RPG.World.WorldBuilder.RoamRadius <= 5f, "small aggro and roaming, medium chase");
+        }
+
+        static void TestWornSlots()
+        {
+            Func<Skill, int> high = s => 60;
+            string reason;
+            InventoryModel inv = new InventoryModel(GameContent.Item);
+            inv.Add("helm_bronze", 1);
+            inv.Add("platelegs_bronze", 1);
+            inv.Add("kiteshield_bronze", 1);
+            inv.Add("sword_bronze", 1);
+            for (int i = 0; i < 4; i++) Check(inv.Equip(i, high, out reason), "equip slot " + i + ": " + reason);
+            Check(inv.HeadId == "helm_bronze" && inv.LegsId == "platelegs_bronze" && inv.ShieldId == "kiteshield_bronze" && inv.WeaponId == "sword_bronze", "helm, legs, shield and sword all worn");
+            Check(inv.FreeSlots() == InventoryModel.SlotCount, "worn items leave the bag");
+            int defense = GameContent.Item("helm_bronze").DefenseBonus + GameContent.Item("platelegs_bronze").DefenseBonus + GameContent.Item("kiteshield_bronze").DefenseBonus;
+            Check(inv.TotalDefenseBonus() == defense, "defence adds up over every slot");
+
+            // a two-handed bow takes the shield off (and the sword goes back to the bag)
+            inv.Add("shortbow_pine", 1);
+            Check(inv.Equip(0, high, out reason) && inv.WeaponId == "shortbow_pine" && inv.ShieldId == null, "bow is two-handed: shield comes off");
+            Check(inv.Count("kiteshield_bronze") == 1 && inv.Count("sword_bronze") == 1, "sword and shield back in the bag");
+            // and putting the shield back on takes the bow off
+            int shieldSlot = -1;
+            for (int i = 0; i < InventoryModel.SlotCount; i++) if (inv.GetSlot(i).ItemId == "kiteshield_bronze") shieldSlot = i;
+            Check(inv.Equip(shieldSlot, high, out reason) && inv.ShieldId == "kiteshield_bronze" && inv.WeaponId == null && inv.Count("shortbow_pine") == 1, "shield takes the two-hander off");
+
+            // swapping in a two-hander needs a free slot for the shield
+            InventoryModel full = new InventoryModel(GameContent.Item);
+            full.SetEquipped("sword_bronze", null);
+            full.SetWornDirect(EquipSlot.Shield, "shield_wood");
+            full.Add("staff_pine", 1);
+            for (int i = 1; i < InventoryModel.SlotCount; i++) full.Add("bones", 1);
+            Check(!full.Equip(0, high, out reason) && full.WeaponId == "sword_bronze", "no room to take the shield off: staff not equipped");
+
+            // ammo: one stack of up to 999
+            InventoryModel quiver = new InventoryModel(GameContent.Item);
+            quiver.Add("pine_arrows", 1500);
+            Check(quiver.Equip(0, high, out reason) && quiver.AmmoId == "pine_arrows" && quiver.AmmoCount == InventoryModel.AmmoCap, "999 arrows go to the ammo slot");
+            Check(quiver.Count("pine_arrows") == 1500 - InventoryModel.AmmoCap, "the rest stay in the bag");
+            Check(quiver.UseAmmo("pine_arrows") && quiver.AmmoCount == InventoryModel.AmmoCap - 1, "a shot uses one equipped arrow");
+            Check(!quiver.UseAmmo("spark_stone"), "can't fire ammo that isn't equipped");
+            Check(quiver.Unequip(EquipSlot.Ammo) && quiver.AmmoCount == 0 && quiver.Count("pine_arrows") == 1499, "unequipping returns the arrows");
+            Check(!GameContent.Item("spark_stone").IsEquippable, "spark stones stay in the bag (staves burn them from there)");
+
+            // tools are wielded, gated by the gathering skill
+            foreach (ItemInfo item in GameContent.Items.Values)
+            {
+                if (item.Tool == ToolKind.None) continue;
+                Check(item.Slot == EquipSlot.Weapon && !item.TwoHanded, item.Id + " is wielded in the weapon slot");
+                Check(item.RequiredSkill == (item.Tool == ToolKind.Axe ? Skill.Woodcutting : Skill.Mining), item.Id + " needs the gathering skill to wield");
+                Check(item.AttackBonus < GameContent.Item("sword_" + item.Tier.ToLower()).AttackBonus, item.Id + " is a worse weapon than the sword");
+            }
+            foreach (ItemInfo item in GameContent.Items.Values)
+            {
+                if (item.Style != CombatStyle.Melee) Check(item.TwoHanded, item.Id + " (bow / staff) is two-handed");
+            }
+
+            // everything survives a save
+            InventoryModel copy = new InventoryModel(GameContent.Item);
+            InventoryModel source = new InventoryModel(GameContent.Item);
+            source.SetEquipped("sword_iron", "platebody_iron");
+            source.SetWornDirect(EquipSlot.Head, "helm_iron");
+            source.SetWornDirect(EquipSlot.Legs, "platelegs_iron");
+            source.SetWornDirect(EquipSlot.Shield, "kiteshield_iron");
+            source.SetWornDirect(EquipSlot.Ammo, "pine_arrows", 321);
+            copy.Restore(source.Capture());
+            Check(copy.HeadId == "helm_iron" && copy.LegsId == "platelegs_iron" && copy.ShieldId == "kiteshield_iron" && copy.AmmoCount == 321 && copy.WeaponId == "sword_iron", "all worn slots round-trip a save");
+
+            // death: keep the single most valuable thing, worn or not
+            string kept;
+            List<ItemStack> dropped = copy.TakeAllExceptMostValuable(out kept);
+            Check(kept == "platebody_iron" && copy.BodyId == "platebody_iron" && copy.HeadId == null && copy.ShieldId == null && copy.AmmoCount == 0, "death keeps only the platebody");
+            Check(dropped.Exists(d => d.ItemId == "pine_arrows" && d.Quantity == 321) && dropped.Exists(d => d.ItemId == "helm_iron"), "worn helm and ammo drop");
+        }
+
+        static void TestCombatStyles()
+        {
+            foreach (int level in new[] { 1, 10, 30, 60, 99 })
+            {
+                foreach (int bonus in new[] { 0, 20, 60 })
+                {
+                    int slash = CombatMath.StanceMaxHit(MeleeStance.Slash, level, bonus);
+                    int crush = CombatMath.StanceMaxHit(MeleeStance.Crush, level, bonus);
+                    int bash = CombatMath.StanceMaxHit(MeleeStance.Bash, level, bonus);
+                    Check(crush > slash, "crush hits harder than slash at str " + level + " +" + bonus);
+                    Check(bash == slash, "shield bash hits like slash");
+                    double slashDps = slash / CombatMath.StanceInterval(MeleeStance.Slash);
+                    double crushDps = crush / CombatMath.StanceInterval(MeleeStance.Crush);
+                    Check(slashDps >= crushDps * 0.7 && slashDps <= crushDps * 1.05, "slash trades damage for speed, not much dps (" + slashDps + " vs " + crushDps + ")");
+                }
+            }
+            Check(CombatMath.StanceInterval(MeleeStance.Slash) < CombatMath.StanceInterval(MeleeStance.Crush), "slash is faster than crush");
+            Check(CombatMath.StanceInterval(MeleeStance.Bash) == CombatMath.StanceInterval(MeleeStance.Slash), "bash is as fast as slash");
+            Check(CombatMath.StanceMaxHit(MeleeStance.Crush, 60, 0) > CombatMath.StanceMaxHit(MeleeStance.Crush, 20, 0) * 1.5, "crush scales with Strength");
+            Check(CombatMath.StanceSkill(MeleeStance.Slash) == Skill.Attack && CombatMath.StanceSkill(MeleeStance.Crush) == Skill.Strength && CombatMath.StanceSkill(MeleeStance.Bash) == Skill.Defense, "each style trains its own skill");
+
+            Check(CombatMath.DamageReduction(1, 0) < 0.01, "a new character blocks almost nothing");
+            Check(CombatMath.DamageReduction(50, 100) > CombatMath.DamageReduction(20, 100) && CombatMath.DamageReduction(50, 100) > CombatMath.DamageReduction(50, 20), "more Defense and armour block more");
+            Check(CombatMath.DamageReduction(99, 400) <= CombatMath.MaxDamageReduction + 1e-9, "damage reduction is capped");
+            Check(CombatMath.Reduce(1, 0.4) == 1 && CombatMath.Reduce(0, 0.4) == 0 && CombatMath.Reduce(100, 0.25) == 75, "reduced hits never drop below 1");
+        }
+
+        static void TestArmourSets()
+        {
+            foreach (GameContent.SmithTier tier in GameContent.SmithTiers)
+            {
+                string key = tier.Tier.ToLower();
+                MaterialTier material = GameContent.Tier(tier.Tier);
+                ItemInfo helm = GameContent.Item("helm_" + key), legs = GameContent.Item("platelegs_" + key), shield = GameContent.Item("kiteshield_" + key), plate = GameContent.Item("platebody_" + key), sword = GameContent.Item("sword_" + key);
+                Check(helm != null && legs != null && shield != null, tier.Tier + " has helm, legs and kiteshield");
+                if (helm == null || legs == null || shield == null) continue;
+                Check(helm.Slot == EquipSlot.Head && legs.Slot == EquipSlot.Legs && shield.Slot == EquipSlot.Shield, tier.Tier + " pieces go in the right slots");
+                foreach (ItemInfo piece in new[] { helm, legs, shield, plate })
+                {
+                    Check(piece.RequiredSkill == Skill.Defense && piece.RequiredLevel == material.Level, piece.Id + " needs Defense " + material.Level);
+                }
+                Check(sword.RequiredSkill == Skill.Attack && sword.RequiredLevel == material.Level, sword.Id + " needs Attack " + material.Level);
+                Check(plate.DefenseBonus > legs.DefenseBonus && legs.DefenseBonus > shield.DefenseBonus && shield.DefenseBonus > helm.DefenseBonus, tier.Tier + " plate > legs > shield > helm");
+                Check(plate.Value > legs.Value && legs.Value > helm.Value, tier.Tier + " prices follow the pieces");
+                foreach (string recipeId in new[] { "forge_helm_", "forge_legs_", "forge_shield_" })
+                {
+                    Recipe recipe = GameContent.Recipes.Find(r => r.Id == recipeId + key);
+                    Check(recipe != null && recipe.Station == StationKind.Anvil && recipe.ToolId == GameContent.HammerId && recipe.Level <= 99, recipeId + key + " smithed at an anvil");
+                    if (recipe == null) continue;
+                    ItemInfo made = GameContent.Item(recipe.Output.ItemId);
+                    int bars = recipe.Inputs[0].Quantity;
+                    Check(made.Value >= bars * tier.BarValue, recipe.Id + " is worth at least its bars");
+                }
+            }
+            ItemInfo wood = GameContent.Item("shield_wood");
+            Check(wood != null && wood.Slot == EquipSlot.Shield && wood.RequiredLevel == 1, "a level 1 wooden shield exists for shield bashing");
+            Check(GameContent.Recipes.Exists(r => r.Output.ItemId == "shield_wood" && r.Level == 1), "wooden shields can be crafted at level 1");
+        }
+
+        static void TestCharacterNames()
+        {
+            HashSet<string> taken = new HashSet<string> { RPG.Game.CharacterStore.Slug("Sir Bob") };
+            Check(RPG.Game.CharacterStore.Validate("Aria", taken) == null, "a normal name is fine");
+            Check(RPG.Game.CharacterStore.Validate("Ab", taken) != null, "too short");
+            Check(RPG.Game.CharacterStore.Validate("Abcdefghijklm", taken) != null, "too long");
+            Check(RPG.Game.CharacterStore.Validate("9lives", taken) != null, "must start with a letter");
+            Check(RPG.Game.CharacterStore.Validate("Bob!", taken) != null, "no punctuation");
+            Check(RPG.Game.CharacterStore.Validate("Big  Al", taken) != null, "no double spaces");
+            Check(RPG.Game.CharacterStore.Validate(" Al ", taken) != null, "no leading/trailing spaces");
+            Check(RPG.Game.CharacterStore.Validate("Sir Bob", taken) != null, "taken name is rejected");
+            Check(RPG.Game.CharacterStore.Validate("sirbob", taken) != null && RPG.Game.CharacterStore.Validate("SIR BOB", taken) != null, "names are unique ignoring case and spaces");
+            Check(RPG.Game.CharacterStore.Validate("Sir Bobby", taken) == null, "a different name is free");
+            Check(RPG.Control.CharacterAppearance.SkinColors.Length >= 5 && RPG.Control.CharacterAppearance.HairColors.Length >= 6 && RPG.Control.CharacterAppearance.ShirtColors.Length >= 6, "enough colour choices");
         }
 
         static void TestWorldLayout()

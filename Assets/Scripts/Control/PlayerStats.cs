@@ -2,6 +2,7 @@ using RPG.Combat;
 using RPG.Content;
 using RPG.Core;
 using RPG.Items;
+using RPG.Saving;
 using RPG.Stats;
 using UnityEngine;
 
@@ -11,8 +12,95 @@ namespace RPG.Control
     /// Player side of combat: provides levels + gear bonuses to the Fighter, awards combat XP,
     /// keeps max HP in sync with Vitality, regenerates out of combat and respawns on death.
     /// </summary>
-    public class PlayerStats : MonoBehaviour, ICombatStats
+    public class PlayerStats : MonoBehaviour, ICombatStats, IAttackStyle, ISaveable
     {
+        MeleeStance stance = MeleeStance.Slash;
+
+        /// <summary>The chosen melee stance. Bash quietly falls back to Slash without a shield.</summary>
+        public MeleeStance Stance
+        {
+            get
+            {
+                if (stance == MeleeStance.Bash && !HasShield) return MeleeStance.Slash;
+                return stance;
+            }
+        }
+
+        public MeleeStance ChosenStance { get { return stance; } }
+
+        public bool HasShield { get { return inventory != null && inventory.Model.ShieldId != null; } }
+
+        public event System.Action onStanceChanged;
+        public event System.Action onRespawned;
+
+        /// <summary>Picks a melee stance. Bash needs a shield. Returns false (with a message) if not allowed.</summary>
+        public bool SetStance(MeleeStance value)
+        {
+            if (value == MeleeStance.Bash && !HasShield)
+            {
+                GameLog.Add("You need a shield equipped to fight in the Defense (shield bash) style.", GameLog.Warning);
+                return false;
+            }
+            if (stance != value)
+            {
+                stance = value;
+                GameLog.Add("Combat style: " + StanceName(value) + " (trains " + CombatMath.StanceSkill(value) + ").");
+                if (onStanceChanged != null) onStanceChanged();
+            }
+            return true;
+        }
+
+        public static string StanceName(MeleeStance value)
+        {
+            switch (value)
+            {
+                case MeleeStance.Crush: return "Crush";
+                case MeleeStance.Bash: return "Shield bash";
+                default: return "Slash";
+            }
+        }
+
+        public float IntervalMultiplier
+        {
+            get { return Style == CombatStyle.Melee ? CombatMath.StanceInterval(Stance) : 1f; }
+        }
+
+        public int MaxHit
+        {
+            get
+            {
+                if (Style != CombatStyle.Melee) return CombatMath.MaxHit(StrengthLevel, StrengthBonus);
+                return CombatMath.StanceMaxHit(Stance, StrengthLevel, StrengthBonus);
+            }
+        }
+
+        public AttackAnimation Animation
+        {
+            get
+            {
+                if (Style == CombatStyle.Ranged) return AttackAnimation.Shoot;
+                if (Style == CombatStyle.Magic) return AttackAnimation.Cast;
+                // no weapon: punch (the bash clip is a left-hand jab)
+                if (inventory == null || inventory.Model.WeaponId == null) return AttackAnimation.Bash;
+                switch (Stance)
+                {
+                    case MeleeStance.Crush: return AttackAnimation.Crush;
+                    case MeleeStance.Bash: return AttackAnimation.Bash;
+                    default: return AttackAnimation.Slash;
+                }
+            }
+        }
+
+        public object CaptureState()
+        {
+            return (int)stance;
+        }
+
+        public void RestoreState(object state)
+        {
+            if (state is int) stance = (MeleeStance)(int)state;
+        }
+
         const float RespawnDelay = 5f;
         const float RegenDelay = 8f;
         const float RegenInterval = 3f;
@@ -59,13 +147,18 @@ namespace RPG.Control
             failMessage = null;
             ItemInfo weapon = Weapon();
             if (weapon == null || string.IsNullOrEmpty(weapon.AmmoId)) return true;
-            if (inventory.Model.Remove(weapon.AmmoId, 1))
+            ItemInfo ammo = GameContent.Item(weapon.AmmoId);
+            // arrows come from the ammo slot; spark stones (not wearable) from the bag
+            bool used = ammo != null && ammo.Slot == EquipSlot.Ammo ? inventory.Model.UseAmmo(weapon.AmmoId) : inventory.Model.Remove(weapon.AmmoId, 1);
+            if (used)
             {
                 inventory.NotifyChanged();
                 return true;
             }
-            ItemInfo ammo = GameContent.Item(weapon.AmmoId);
-            failMessage = "You have no " + (ammo != null ? ammo.Name.ToLower() : weapon.AmmoId) + " left.";
+            string name = ammo != null ? ammo.Name.ToLower() : weapon.AmmoId;
+            failMessage = ammo != null && ammo.Slot == EquipSlot.Ammo
+                ? "You have no " + name + " equipped. Click arrows in your bag to equip them."
+                : "You have no " + name + " left.";
             return false;
         }
 
@@ -146,20 +239,14 @@ namespace RPG.Control
                 CombatStyle style = Style;
                 if (style == CombatStyle.Melee)
                 {
-                    // Twist on RuneScape: melee XP is split between Attack and Strength automatically.
-                    skills.AddXp(Skill.Attack, damage * 0.8 * rate);
-                    skills.AddXp(Skill.Strength, damage * 0.8 * rate);
+                    // melee XP goes to the skill of the chosen stance: Slash = Attack, Crush = Strength, Bash = Defense
+                    skills.AddXp(CombatMath.StanceSkill(Stance), damage * 1.6 * rate);
                 }
                 else
                 {
                     skills.AddXp(style == CombatStyle.Ranged ? Skill.Ranged : Skill.Magic, damage * 1.6 * rate);
                 }
                 skills.AddXp(Skill.Vitality, damage * 0.33 * rate);
-            }
-            else if (defender == gameObject)
-            {
-                // Defense levels from being attacked: XP for damage absorbed, a bonus for every dodge.
-                skills.AddXp(Skill.Defense, (damage > 0 ? damage * 0.5 : 4.0) * rate);
             }
         }
 
@@ -204,8 +291,9 @@ namespace RPG.Control
         {
             deadTimer = 0;
             // The NavMeshAgent is disabled while dead (see Mover), so moving the transform is safe.
-            transform.position = spawnPoint;
+            transform.position = RPG.World.WorldBuilder.Root != null ? RPG.World.WorldBuilder.StartPosition : spawnPoint;
             transform.rotation = spawnRotation;
+            if (onRespawned != null) onRespawned();
             health.Revive();
             GameLog.Add("You wake up, a little sore.");
         }

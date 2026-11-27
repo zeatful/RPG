@@ -14,6 +14,8 @@ namespace RPG.Items
         public InventoryModel Model { get; private set; }
 
         public event Action onChanged;
+        public event Action<ItemInfo> onEquipped;
+        public event Action onAte;
 
         SkillSet skills;
 
@@ -51,7 +53,11 @@ namespace RPG.Items
             else if (info.IsEquippable)
             {
                 string reason;
-                if (Model.Equip(index, LevelOf, out reason)) GameLog.Add("You equip the " + info.Name + ".");
+                if (Model.Equip(index, LevelOf, out reason))
+                {
+                    GameLog.Add(info.Slot == EquipSlot.Ammo ? "You equip " + Model.AmmoCount + " " + info.Name.ToLower() + "." : "You equip the " + info.Name + ".");
+                    if (onEquipped != null) onEquipped(info);
+                }
                 else GameLog.Add(reason, GameLog.Warning);
             }
             else if (info.IsEdible)
@@ -61,16 +67,14 @@ namespace RPG.Items
                 Model.Remove(info.Id, 1);
                 health.Heal(info.HealAmount);
                 GameLog.Add("You eat the " + info.Name + ". It heals " + info.HealAmount + ".");
+                if (onAte != null) onAte();
             }
             else if (GameContent.Burnables.ContainsKey(info.Id))
             {
                 RPG.World.Firemaker firemaker = GetComponent<RPG.World.Firemaker>();
                 if (firemaker != null) firemaker.Light(info.Id);
             }
-            else if (info.Tool != ToolKind.None)
-            {
-                GameLog.Add(info.Name + ": " + info.RequiredSkill + " " + info.RequiredLevel + ", works " + (int)Mathf.Round(info.ToolPower * 100) + "% as fast as bronze. Keep it in your bag.");
-            }
+
             else
             {
                 GameLog.Add(string.IsNullOrEmpty(info.Description) ? info.Name + "." : info.Description);
@@ -88,7 +92,9 @@ namespace RPG.Items
 
         public void Unequip(EquipSlot slot)
         {
+            ItemInfo info = GameContent.Item(Model.Worn(slot));
             if (!Model.Unequip(slot)) GameLog.Add("Not enough inventory space.", GameLog.Warning);
+            else if (info != null && onEquipped != null) onEquipped(info);
             NotifyChanged();
         }
 
@@ -128,6 +134,14 @@ namespace RPG.Items
             return recipe.CanMake(Model, LevelOf);
         }
 
+        /// <summary>The wielded tool of this kind if the player has the level to use it, or null.</summary>
+        public ItemInfo EquippedTool(ToolKind kind)
+        {
+            ItemInfo weapon = GameContent.Item(Model.WeaponId);
+            if (weapon == null || weapon.Tool != kind || LevelOf(weapon.RequiredSkill) < weapon.RequiredLevel) return null;
+            return weapon;
+        }
+
         /// <summary>Best tool of a kind in the bag that the player has the level to use, or null.</summary>
         public ItemInfo BestTool(ToolKind kind)
         {
@@ -143,9 +157,11 @@ namespace RPG.Items
             return best;
         }
 
-        /// <summary>True if the bag has a tool of this kind at all (even one you can't use yet).</summary>
+        /// <summary>True if the bag (or weapon slot) has a tool of this kind at all (even one you can't use yet).</summary>
         public bool HasAnyTool(ToolKind kind)
         {
+            ItemInfo weapon = GameContent.Item(Model.WeaponId);
+            if (weapon != null && weapon.Tool == kind) return true;
             for (int i = 0; i < InventoryModel.SlotCount; i++)
             {
                 ItemStack stack = Model.GetSlot(i);
@@ -158,8 +174,7 @@ namespace RPG.Items
 
         public bool IsEmpty()
         {
-            return Model.FreeSlots() == InventoryModel.SlotCount
-                && string.IsNullOrEmpty(Model.WeaponId) && string.IsNullOrEmpty(Model.BodyId);
+            return Model.FreeSlots() == InventoryModel.SlotCount && !Model.HasAnythingWorn();
         }
 
         public void NotifyChanged()

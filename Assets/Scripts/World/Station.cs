@@ -64,6 +64,9 @@ namespace RPG.World
                     case StationKind.Furnace: return "Smelt at";
                     case StationKind.Anvil: return "Smith at";
                     case StationKind.Fire: return "Cook on";
+                    case StationKind.Door:
+                        Doorway door = GetComponent<Doorway>();
+                        return door != null && door.IsExit ? "Leave by" : "Enter";
                 }
                 return "Use";
             }

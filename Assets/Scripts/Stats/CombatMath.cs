@@ -35,6 +35,49 @@ namespace RPG.Stats
             return Math.Max(1, (int)Math.Floor(baseHit * 10.0));
         }
 
+        // Slash and Bash swing this much faster than Crush but their max hit is this much lower.
+        public const float QuickInterval = 0.8f;
+        public const double QuickDamage = 0.8;
+        // Crush gets this many hidden Strength levels.
+        public const int CrushStrengthBonus = 3;
+        public const double MaxDamageReduction = 0.4;
+
+        public static float StanceInterval(MeleeStance stance)
+        {
+            return stance == MeleeStance.Crush ? 1f : QuickInterval;
+        }
+
+        /// <summary>Max hit in a stance. Crush scales fully with Strength (plus a little); Slash and Bash hit 80% as hard.</summary>
+        public static int StanceMaxHit(MeleeStance stance, int strengthLevel, int strengthBonus)
+        {
+            if (stance == MeleeStance.Crush) return MaxHit(strengthLevel + CrushStrengthBonus, strengthBonus);
+            return Math.Max(1, (int)Math.Floor(MaxHit(strengthLevel, strengthBonus) * QuickDamage));
+        }
+
+        public static Skill StanceSkill(MeleeStance stance)
+        {
+            switch (stance)
+            {
+                case MeleeStance.Crush: return Skill.Strength;
+                case MeleeStance.Bash: return Skill.Defense;
+                default: return Skill.Attack;
+            }
+        }
+
+        /// <summary>Fraction of each hit's damage soaked up by Defense level and armour (0..40%).</summary>
+        public static double DamageReduction(int defenseLevel, int defenseBonus)
+        {
+            double reduction = Math.Max(0, defenseLevel) * 0.003 + Math.Max(0, defenseBonus) * 0.0015;
+            return Math.Min(MaxDamageReduction, reduction);
+        }
+
+        /// <summary>A landed hit after damage reduction; never below 1.</summary>
+        public static int Reduce(int damage, double reduction)
+        {
+            if (damage <= 0) return 0;
+            return Math.Max(1, (int)Math.Round(damage * (1.0 - reduction)));
+        }
+
         /// <summary>Damage for a successful hit: uniform 1..maxHit. roll01 is a random value in [0,1).</summary>
         public static int RollDamage(int maxHit, double roll01)
         {

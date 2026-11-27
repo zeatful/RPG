@@ -10,7 +10,7 @@ namespace RPG.Gathering
     /// <summary>
     /// Player action: walk to a tree or rock and swing at it every 1.2 seconds. Each swing does work
     /// (GameContent.SwingPower: tool power, more with levels above the requirement); a log/ore drops each
-    /// time the work reaches the node's hardness. Needs an axe or pickaxe in the bag.
+    /// time the work reaches the node's hardness. You must be wielding an axe (trees) or pickaxe (rocks).
     /// </summary>
     public class Gatherer : MonoBehaviour, IAction
     {
@@ -26,6 +26,7 @@ namespace RPG.Gathering
         SkillSet skills;
         Inventory inventory;
         Health health;
+        RPG.Combat.Fighter fighter;
 
         private void Awake()
         {
@@ -35,6 +36,7 @@ namespace RPG.Gathering
             skills = GetComponent<SkillSet>();
             inventory = GetComponent<Inventory>();
             health = GetComponent<Health>();
+            fighter = GetComponent<RPG.Combat.Fighter>();
         }
 
         public void Gather(ResourceNode node)
@@ -53,12 +55,12 @@ namespace RPG.Gathering
                 return;
             }
             ToolKind toolKind = info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe;
-            if (inventory.BestTool(toolKind) == null)
+            if (inventory.EquippedTool(toolKind) == null)
             {
-                string tool = toolKind == ToolKind.Axe ? "an axe" : "a pickaxe";
+                string tool = toolKind == ToolKind.Axe ? "axe" : "pickaxe";
                 GameLog.Add(inventory.HasAnyTool(toolKind)
-                    ? "You don't have the level to use your " + (toolKind == ToolKind.Axe ? "axe" : "pickaxe") + "."
-                    : "You need " + tool + " to " + node.ActionVerb.ToLower() + " this. General stores sell them.", GameLog.Warning);
+                    ? "You need to wield your " + tool + " to " + node.ActionVerb.ToLower() + " this. Click it in your bag to equip it."
+                    : "You need to wield " + (toolKind == ToolKind.Axe ? "an axe" : "a pickaxe") + " to " + node.ActionVerb.ToLower() + " this. General stores sell them.", GameLog.Warning);
                 return;
             }
             if (!inventory.Model.CanAdd(info.ItemId, 1))
@@ -99,10 +101,15 @@ namespace RPG.Gathering
             if (timer < AttemptInterval) return;
             timer = 0;
 
-            // Reuse the attack animation as a chop/mine swing. Its Hit() event is ignored because
+            // Reuse an attack animation as a chop/mine swing. Its Hit() event is ignored because
             // the Fighter has no target while we're gathering.
-            animator.ResetTrigger("stopAttack");
-            animator.SetTrigger("attack");
+            AttackAnimation swing = target.Info.Kind == NodeKind.Tree ? AttackAnimation.Chop : AttackAnimation.Mine;
+            if (fighter != null) fighter.PlaySwing(swing, 1f);
+            else
+            {
+                animator.ResetTrigger("stopAttack");
+                animator.SetTrigger("attack");
+            }
             Attempt();
         }
 
@@ -116,7 +123,7 @@ namespace RPG.Gathering
                 return;
             }
 
-            ItemInfo tool = inventory.BestTool(info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe);
+            ItemInfo tool = inventory.EquippedTool(info.Kind == NodeKind.Tree ? ToolKind.Axe : ToolKind.Pickaxe);
             if (tool == null)
             {
                 Stop();
@@ -125,6 +132,7 @@ namespace RPG.Gathering
             double power = GameContent.SwingPower(skills.GetLevel(info.Skill), info.Level, tool.ToolPower);
             target.Work += power * Random.Range(0.75f, 1.25f);
             target.SinceSwing = 0;
+            if (onSwing != null) onSwing(info.Kind);
             if (target.Work < info.Hardness) return;
 
             inventory.TryAdd(info.ItemId, 1);
@@ -144,6 +152,11 @@ namespace RPG.Gathering
                 Stop();
             }
         }
+
+        // tree or rock swung at (sound effects)
+        public static event System.Action<NodeKind> onSwing;
+
+        public bool IsGathering { get { return target != null; } }
 
         void Stop()
         {

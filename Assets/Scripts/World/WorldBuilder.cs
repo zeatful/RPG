@@ -48,12 +48,14 @@ namespace RPG.World
             Physics.SyncTransforms();
 
             BuildPonds();
+            Interiors.Reset();
             foreach (TownInfo town in WorldLayout.Towns) TownBuilder.Build(town, Root, art);
             BuildBanditCamp();
             BuildCrossroads();
             Physics.SyncTransforms();
 
             BakeNavMesh();
+            Interiors.BakeNavMesh();
             Scatter();
 
             TownInfo start = WorldLayout.Town(WorldLayout.StartTown);
@@ -75,7 +77,7 @@ namespace RPG.World
             SetupCamera();
             BuildSeconds = Time.realtimeSinceStartup - started;
             Debug.Log("[RPG World] built in " + BuildSeconds.ToString("0.0") + "s: " + nodePositions.Count + " nodes, "
-                + EnemyProfile.All.Count + " enemies, " + Station.All.Count + " stations");
+                + EnemyProfile.All.Count + " enemies, " + Station.All.Count + " stations, " + Interiors.All.Count + " rooms");
         }
 
         // ------------------------------------------------------------------ helpers
