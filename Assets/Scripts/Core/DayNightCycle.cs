@@ -11,7 +11,7 @@ namespace RPG.Core
         public float DayLengthSeconds = 480f;
 
         // 0 = midnight, 0.25 = 6:00, 0.5 = noon
-        [Range(0, 1)] public float TimeOfDay = 0.3f;
+        [Range(0, 1)] public float TimeOfDay = 0.375f;
 
         public static DayNightCycle Instance { get; private set; }
 
