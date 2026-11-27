@@ -51,14 +51,16 @@ namespace RPG.Game
             SetupPlayer(player);
             GameObject bossTemplate = FindBossTemplate();
             SetupEnemies();
-            SpawnBoss(bossTemplate, player.transform.position);
+            Vector3? lair = SpawnBoss(bossTemplate, player.transform.position);
             gameObject.AddComponent<DayNightCycle>();
-            SpawnNodes(player.transform.position);
+            SpawnNodes(player.transform.position, lair);
             gameObject.AddComponent<RpgHud>();
 
             GameLog.Clear();
             GameLog.Add("Welcome! Click trees and rocks to gather, enemies to fight, loot to pick it up.");
             GameLog.Add("I = inventory and crafting, K = skills, S / L = save / load.");
+
+            if (SmokeTest.Requested) gameObject.AddComponent<SmokeTest>();
         }
 
         static T Ensure<T>(GameObject go) where T : Component
@@ -104,21 +106,24 @@ namespace RPG.Game
             }
         }
 
-        void SpawnNodes(Vector3 center)
+        // Keep trees and rocks out of the boss's reach so new players can skill in peace.
+        const float NodeBossClearance = 18f;
+
+        void SpawnNodes(Vector3 center, Vector3? lair)
         {
             System.Random random = new System.Random(LayoutSeed);
             List<Vector3> placed = new List<Vector3>();
 
             // Trees spread over one arc around the start point, rocks over another.
-            SpawnGroup("pine", 5, center, 20f, 200f, random, placed);
-            SpawnGroup("oak", 3, center, 20f, 200f, random, placed);
-            SpawnGroup("willow", 2, center, 20f, 200f, random, placed);
-            SpawnGroup("copper", 3, center, 220f, 340f, random, placed);
-            SpawnGroup("tin", 3, center, 220f, 340f, random, placed);
-            SpawnGroup("iron", 2, center, 220f, 340f, random, placed);
+            SpawnGroup("pine", 5, center, 20f, 200f, random, placed, lair);
+            SpawnGroup("oak", 3, center, 20f, 200f, random, placed, lair);
+            SpawnGroup("willow", 2, center, 20f, 200f, random, placed, lair);
+            SpawnGroup("copper", 3, center, 220f, 340f, random, placed, lair);
+            SpawnGroup("tin", 3, center, 220f, 340f, random, placed, lair);
+            SpawnGroup("iron", 2, center, 220f, 340f, random, placed, lair);
         }
 
-        void SpawnGroup(string nodeId, int count, Vector3 center, float minAngle, float maxAngle, System.Random random, List<Vector3> placed)
+        void SpawnGroup(string nodeId, int count, Vector3 center, float minAngle, float maxAngle, System.Random random, List<Vector3> placed, Vector3? lair)
         {
             NodeInfo info;
             if (!GameContent.Nodes.TryGetValue(nodeId, out info)) return;
@@ -133,6 +138,7 @@ namespace RPG.Game
                 NavMeshHit hit;
                 if (!NavMesh.SamplePosition(candidate, out hit, 2f, NavMesh.AllAreas)) continue;
                 if (TooClose(hit.position, placed, info.Kind == NodeKind.Tree ? 3.5f : 2.5f)) continue;
+                if (lair.HasValue && RpgUtil.FlatDistance(hit.position, lair.Value) < NodeBossClearance) continue;
 
                 ResourceNode.Create(info, hit.position, (float)random.NextDouble() * 360f);
                 placed.Add(hit.position);
@@ -151,20 +157,28 @@ namespace RPG.Game
             return template;
         }
 
-        void SpawnBoss(GameObject template, Vector3 playerStart)
+        Vector3? SpawnBoss(GameObject template, Vector3 playerStart)
         {
-            if (template == null) return;
+            if (template == null) return null;
             EnemyInfo info;
-            if (!GameContent.Enemies.TryGetValue(GameContent.BossId, out info)) return;
+            if (!GameContent.Enemies.TryGetValue(GameContent.BossId, out info)) return null;
 
-            // Old Gullet lurks by the bridge if there is one, otherwise a short walk from the start.
-            Vector3 lair = playerStart + new Vector3(18f, 0, 18f);
+            // Old Gullet lurks at the far end of the bridge if there is one, otherwise a walk from the start.
+            // Keep it well outside its engage range of the start so fresh players aren't slammed on spawn.
+            Vector3 lair = playerStart + new Vector3(20f, 0, 20f);
             GameObject bridgePath = GameObject.Find("BridgePatrolPath");
             if (bridgePath != null && bridgePath.transform.childCount > 0)
             {
-                Vector3 sum = Vector3.zero;
-                foreach (Transform waypoint in bridgePath.transform) sum += waypoint.position;
-                lair = sum / bridgePath.transform.childCount;
+                float best = -1f;
+                foreach (Transform waypoint in bridgePath.transform)
+                {
+                    float distance = RpgUtil.FlatDistance(waypoint.position, playerStart);
+                    if (distance > best)
+                    {
+                        best = distance;
+                        lair = waypoint.position;
+                    }
+                }
             }
             NavMeshHit hit;
             if (NavMesh.SamplePosition(lair, out hit, 6f, NavMesh.AllAreas)) lair = hit.position;
@@ -183,6 +197,7 @@ namespace RPG.Game
             EnemyProfile profile = Ensure<EnemyProfile>(template);
             profile.Configure(info);
             template.AddComponent<BossController>();
+            return lair;
         }
 
         static bool TooClose(Vector3 position, List<Vector3> placed, float minDistance)
